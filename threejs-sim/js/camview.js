@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { CAMERA, MAT } from './config.js';
 import { calibrate, project, MARKER_CORNERS, SAVED_FRAME_CORNERS, markerCentre } from './calib.js';
 import { detectCubes } from './detect.js';
+import { detectMarkers } from './aruco.js';
 
 const W = CAMERA.w, H = CAMERA.h;
 const COLOR_CSS = { orange: '#e8792b', blue: '#2f6fd6', yellow: '#d9a800', green: '#2f9b47', red: '#d23b3b' };
@@ -208,6 +209,43 @@ export function initCameraTab(ctx) {
   };
   $('cam-track-rate').onchange = () => { if (trackTimer) { clearInterval(trackTimer); trackTimer = setInterval(trackOnce, Number($('cam-track-rate').value)); } };
 
+  // ---- automatic calibration from the ArUco markers in the current frame
+  let markerQuads = {};
+  function autoCalibrate({ quiet = false } = {}) {
+    const img = grabFrame();
+    if (!img) { if (!quiet) ctx.toast('No readable frame'); return false; }
+    const t0 = performance.now();
+    const { markers } = detectMarkers(img);
+    const ms = performance.now() - t0;
+    const sx = W / img.width, sy = H / img.height;                      // calibration uses the 1280 x 720 grid
+    markerQuads = Object.fromEntries(Object.entries(markers).map(([id, q]) => [id, q.map(([x, y]) => [x * sx, y * sy])]));
+    const ids = Object.keys(markerQuads).map(Number);
+    if (ids.length < 2) {
+      if (!quiet) ctx.toast(`Only ${ids.length} marker(s) found; at least 2 are needed (4 or more spread over the mat are better)`);
+      $('cam-pick-hint').textContent = `Markers found: ${ids.join(', ') || 'none'} (${ms.toFixed(0)} ms). Too few to calibrate.`;
+      draw(); return false;
+    }
+    points = [];
+    for (const id of ids) MARKER_CORNERS[id].forEach((p, k) => points.push({ id, k, X: [p[0], p[1], 0], uv: markerQuads[id][k] }));
+    try {
+      const next = calibrate(points.map(q => q.X), points.map(q => q.uv), { fixPrincipal: ids.length < 3 });
+      if (next.rms > 4) throw new Error(`fit too poor (${next.rms.toFixed(1)} px)`);
+      cal = next;
+      ctx.onApply(cal);
+      $('cam-pick-hint').textContent = `Markers found: ${ids.sort().join(', ')} in ${ms.toFixed(0)} ms. Camera fitted to ${points.length} corners, ${cal.rms.toFixed(2)} px rms.`;
+      if (!quiet) ctx.log(`camera calibrated from markers ${ids.join(', ')}: f ${cal.f.toFixed(0)} px, ${cal.rms.toFixed(2)} px rms`, 'ok');
+      update();
+      return true;
+    } catch (e) { if (!quiet) ctx.toast(`Calibration failed: ${e.message}`); draw(); return false; }
+  }
+  $('cam-auto').onclick = () => autoCalibrate();
+  let lastKeep = 0;
+  addTracker('camera', () => {
+    if (!$('cam-keep').checked || Date.now() - lastKeep < 5000) return null;
+    lastKeep = Date.now();
+    return autoCalibrate({ quiet: true });
+  });
+
   // ---- cube recognition (read only: works on the frame shown above)
   let detections = [];
   addTracker('cubes', (img, c) => {
@@ -266,6 +304,12 @@ export function initCameraTab(ctx) {
         g.strokeStyle = '#ffffff'; g.lineWidth = 2; g.beginPath(); g.arc(...p.uv, 6, 0, 2 * Math.PI); g.stroke();
         g.strokeStyle = '#2f6fd6'; g.beginPath(); g.moveTo(r[0] - 6, r[1]); g.lineTo(r[0] + 6, r[1]); g.moveTo(r[0], r[1] - 6); g.lineTo(r[0], r[1] + 6); g.stroke();
       }
+    }
+    // markers as detected in the frame (green), with their first corner marked
+    for (const [id, q] of Object.entries(markerQuads)) {
+      g.strokeStyle = '#19d36b'; g.lineWidth = 2.5; g.beginPath(); q.forEach((p, i) => (i ? g.lineTo(...p) : g.moveTo(...p))); g.closePath(); g.stroke();
+      g.fillStyle = '#19d36b'; g.beginPath(); g.arc(...q[0], 4, 0, 2 * Math.PI); g.fill();
+      g.font = 'bold 16px system-ui'; g.fillText(`found ${id}`, q[2][0] + 6, q[2][1] + 16);
     }
     for (const d of detections) {
       g.strokeStyle = d.ok ? COLOR_CSS[d.colour] : '#888'; g.lineWidth = 3; g.setLineDash(d.ok ? [] : [6, 4]);

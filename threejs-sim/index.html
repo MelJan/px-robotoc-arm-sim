@@ -201,6 +201,8 @@
       <details open>
         <summary>Calibration <small>camera pose and focal length from the mat markers</small></summary>
         <div class="row wrap">
+          <button id="cam-auto" class="primary" title="Detects the mat's ArUco markers in the frame shown above and fits the camera to their corners">Find markers &amp; calibrate</button>
+          <label class="inline" title="While tracking, re-detect the markers and refit the camera every 5 s (for a camera that gets moved)"><input type="checkbox" id="cam-keep"> Keep calibrated while tracking</label>
           <button id="cam-use-saved">Use detected corners (saved frame)</button>
           <button id="cam-pick">Pick marker centres</button>
           <button id="cam-skip">Skip marker</button>
