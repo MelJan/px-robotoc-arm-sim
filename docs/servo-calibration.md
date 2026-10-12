@@ -24,7 +24,8 @@ That comes from the controller repo, see `reference-robot-arm-repo.md`.
 |-----|-----|-----|-----|-----|-----|
 | 320 | 427 | 403 | 220 | 480 | 650 |
 
-The controller app stores the same HOME (`config/reference-arm/home.json` in the controller repo).
+The controller repo's `config/reference-arm/home.json` has the same HOME.
+**The live controller had a different HOME on 2026-10-12: S5 = 250, S6 = 550** (see `controller-live-2026-10-12.md`). Agree on one before relying on it.
 It also has a PARK pose, the supported rest pose before power on and after power off:
 
 | S1  | S2  | S3  | S4  | S5  | S6  |
@@ -79,6 +80,8 @@ Home is 650 = max grip.
 
 The "Opening" column is the number written before the tick value (9 and 8,5).
 No unit on the sheet, probably cm of gripper opening.
+
+Direction, from the team's taught demo on the live controller: **490 = open, 590 = closed on the cube, 650 = fully closed**. Higher counts close the gripper.
 
 ## Open questions
 

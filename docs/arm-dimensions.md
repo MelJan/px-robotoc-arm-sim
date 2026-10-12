@@ -120,6 +120,6 @@ The gripper tick range in `servo-calibration.md` is 490 to 650.
 - **S1 edge distance vs. base footprint.** The Amazon drawing gives a 9 x 8,4 cm base plate, so a centred S1 axis sits at least 4,2 cm from the plate edge. Which edge does the 1,5 cm refer to? See `amazon-product-info.md`.
 - **9,6 shoulder height** comes only from the whiteboard.
 - **S1 position along the 30 cm edge** is assumed to be centred.
-- **Gripper direction:** does tick value 650 mean open or closed?
+- **Gripper direction:** answered, 490 is open and 650 fully closed (`controller-live-2026-10-12.md`).
 - **Not measured:** board thickness, robot base footprint, link widths and servo body sizes.
 - **Home pose angles:** to place the model in the servo home position (320 / 427 / 403 / 220 / 480 / 650), we need the joint angle at each home tick value. The pick-and-place plan needs the same values, see `pick-and-place-plan.md`.

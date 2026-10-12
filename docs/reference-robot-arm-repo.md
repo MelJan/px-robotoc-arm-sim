@@ -61,6 +61,7 @@ It is a hint for our direction question, not an answer.
 ## 2. HTTP API (how a computed pose reaches the arm)
 
 The app runs on the Pi at `http://raspberrypi.local:8765/`, Swagger docs at `/docs`.
+On the team network it was at http://10.102.4.103:8765/ on 2026-10-12; what it showed then is in `controller-live-2026-10-12.md`.
 Full description: `docs/api.md` in that repo. The relevant actions, all `POST /api/...` with a JSON body:
 
 | Action | Body | Use for us |

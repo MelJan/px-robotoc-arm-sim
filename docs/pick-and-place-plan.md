@@ -143,7 +143,8 @@ Between poses the controller moves all joints in joint space at the demo speed s
 | 10 | Lift | Target position, hover 5 | Open |
 | 11 | Return | Home | 650 |
 
-"Open value" is 490 or 650, depending on the gripper direction, which is still an open question in `servo-calibration.md`.
+"Open value" is 490: the team's taught demo on the controller opens at 490 and grips the cube at 590 (`controller-live-2026-10-12.md`).
+That demo is also a hand-taught version of this sequence, but it lowers the gripper by moving only S2, so the gripper moves on an arc instead of straight down.
 
 The UI already has a **Recorded Demo** panel ("Add position", "Run all once").
 The computed poses can be entered there as a recorded demo to test the sequence before any code drives the arm directly.
@@ -207,7 +208,8 @@ These have to be answered first, most of them are already listed in `servo-calib
 - **S2 behind vertical:** for cubes closer than about 12 cm, the shoulder has to lean backwards (S2 = -14° at r = 10). Check that the real joint allows it, or keep start and target further out.
 - **Tick limits:** answered by the controller's guards (section 3, step 6). They are historical, not measured safe travel.
 - **S1 axis position:** confirm the 1,5 cm edge distance and that S1 is centred on the 30 cm edge, since every board coordinate depends on it.
-- **Gripper:** confirm whether 490 or 650 is open.
+- **Which HOME:** the live controller's HOME (S5 = 250, S6 = 550) differs from the documented one (S5 = 480, S6 = 650). Agree on one; every tick offset depends on it.
+- **Gripper:** answered, 490 is open (see `controller-live-2026-10-12.md`).
 - **Marks on the board:** mark the start and target positions so the cube can be placed at the same spot every time.
 
 ## 8. Check in simulation
