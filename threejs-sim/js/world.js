@@ -31,6 +31,7 @@ export class World {
     this.time = 0;
     this.frames = null;
     this.tol = PLAN.clearance;
+    this.margin = 0;            // extra arm-to-cube clearance for kinematic checks (planner sets it)
     this.prevCounts = null;
     this.prevShapes = null;
   }
@@ -85,6 +86,10 @@ export class World {
     this.time += dt;
     const f = this.frames = fk(anglesFromCounts(counts, this.servos));
     const cmdGap = gapForTheta(gripperTheta(counts[5], this.servos[5]));
+    // the jaws count as "closing" while the commanded gap shrinks, until they hold or reopen
+    if (cmdGap < (this.lastCmdGap ?? cmdGap) - 1e-6) this.closing = true;
+    else if (cmdGap > (this.lastCmdGap ?? cmdGap) + 1e-6) this.closing = false;
+    this.lastCmdGap = cmdGap;
     const { yaw: jawYaw, tilt } = toolYawAndTilt(f.hand);
     const RT = transpose3(f.hand.R);
     const local = p => apply3(RT, [p[0] - f.hand.p[0], p[1] - f.hand.p[1], p[2] - f.hand.p[2]]);
@@ -93,6 +98,7 @@ export class World {
     if (this.holding) {
       const c = this.cube(this.holding.id);
       if (cmdGap > this.holding.width + 0.02) {
+        this.released = { id: c.id, width: this.holding.width };      // the pads still touch it while they open
         this.holding = null; this.gap = cmdGap;
         c.state = 'awake'; c.sleepT = 0; c.w = [0, 0, 0];
         if (tilt > 10) this.event('warn', `${c.id} released with the gripper ${tilt.toFixed(0)}° off vertical`);
@@ -134,7 +140,9 @@ export class World {
     if (dt <= 0) {
       if (this.holding) { const c = this.cube(this.holding.id), hp = heldPose(f); c.p = hp.p; c.R = hp.R; }
       const shapes = armShapes(f, gap);
-      this.contacts = findContacts(shapes, this.cubes, BOARD, this.tol);
+      this.contacts = findContacts(shapes, this.cubes, BOARD, this.tol, this.margin)
+        // pads closing on the cube between them are gripping, not colliding
+        .filter(k => !(this.margin > 0 && /pad|finger/.test(k.a) && k.b.endsWith(' cube') && this.cube(k.b.slice(0, -5)) && this.centring({ part: k.a, cube: k.b.slice(0, -5) }, f, gap)));
       this.prevCounts = counts.slice(); this.prevShapes = null;
       return { frames: f, gap, contacts: this.contacts };
     }
@@ -193,7 +201,10 @@ export class World {
 
   /** A pad or finger touching a cube that sits between the jaws while they close: centring, not a collision. */
   centring(hit, f, gap) {
+    // Only while the jaws close and are near the cube's width: open jaws passing a cube are a collision.
     if (!/pad|finger/.test(hit.part)) return false;
+    if (this.released && hit.cube === this.released.id && gap < this.released.width + 1.0) return true;   // letting go
+    if (!this.closing || gap > CUBE + 1.2) return false;
     const c = this.cube(hit.cube);
     const RT = transpose3(f.hand.R);
     const q = apply3(RT, [c.p[0] - f.hand.p[0], c.p[1] - f.hand.p[1], c.p[2] - f.hand.p[2]]);

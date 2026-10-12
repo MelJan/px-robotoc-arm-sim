@@ -306,6 +306,7 @@ $('go-home').onclick = poseCmd('HOME');
 $('go-park').onclick = poseCmd('PARK');
 $('power-on').onclick = () => { ctl.rearm(); lastContacts = new Set(world.contacts.map(k => `${k.a} × ${k.b}`)); };
 $('estop').onclick = async () => {
+  if (demoRunning) demoAbort = true;
   ctl.stop('emergency stop button');
   if (link) { try { await link.emergencyStop(); log('arm: STOP sent', 'err'); } catch (e) { log(`arm stop failed: ${e.message}`, 'err'); } }
 };
@@ -415,6 +416,105 @@ $('goto-xyz').onclick = () => {
   b.title = 'step1-hacks-10-direct-approach, hand-taught on the controller (docs/controller-live-2026-10-12.md)';
   b.onclick = () => { try { ctl.demo_load(TAUGHT.name, TAUGHT.positions); ctl.settings.demo_speed = Number($('demo-speed').value) || 40; ctl.demo_run(); showPath(TAUGHT.positions, ctl.commands.slice()); } catch (e) { toast(e.message); } };
   $('export-plan').after(b);
+}
+
+// ---------------- demonstration: build a tower, then a physics finale ----------------
+// Plans every move with the same planner as the Task panel, checks it in a copy of the world,
+// runs it at demo speed, and finishes by dropping spinning cubes onto the tower.
+const DEMO_SCENE = [['orange', 0, 11, 0, 0], ['blue', -9, 12, 0, 0], ['yellow', 9, 11, 0, 20], ['green', -6, 17.5, 0, -15]];
+const DEMO_TASKS = [['blue', 'orange'], ['yellow', 'blue']];
+let demoRunning = false, demoAbort = false;
+const until = (cond, maxS = 300) => new Promise(res => {
+  const t0 = performance.now();
+  const id = setInterval(() => { if (cond() || demoAbort || performance.now() - t0 > maxS * 1000) { clearInterval(id); res(); } }, 60);
+});
+const pause = s => until(() => false, s);
+async function runDemo() {
+  if (demoRunning) { demoAbort = true; return; }
+  if (liveControl()) { toast('The demo runs in the simulation only; switch off live control first'); return; }
+  demoRunning = true; demoAbort = false;
+  $('demo-btn').textContent = '■ Stop demo';
+  const ghostWas = $('show-ghost').checked;
+  $('show-ghost').checked = false;                                   // the ghost of the (idle) controller arm would distract
+  try {
+    ctl.rearm(); ctl.setCommands(ctl.poses.HOME.slice()); ctl.poses.HOME.forEach((c, i) => { ctl.position[i] = c; });
+    world.cubes = []; world.holding = null;
+    for (const [c, x, y, l, yaw] of DEMO_SCENE) world.addCube(c, c, x, y, l, yaw);
+    world.dirty = true; renderCubes();
+    leaveOakView(); camera.position.set(-34, 44, 30); controls.target.set(0, 11, 6); controls.update();
+    $('time-scale').value = '3';
+    log('demo: building a tower', 'ok');
+    await until(() => world.settled(), 5);
+    for (const [pick, on] of DEMO_TASKS) {
+      if (demoAbort) break;
+      $('cmd').value = `${pick} on ${on}`;
+      const start = ctl.commands.slice();
+      const plan = planTransfer(world, { pick, place: { on } }, start, { home: ctl.poses.HOME });
+      const report = verify(world, plan, start, { speed: 60 });
+      showPath(plan.steps, start);
+      if (!report.ok) { log(`demo: "${pick} on ${on}" does not pass the simulation check, stopping`, 'err'); break; }
+      log(`demo: ${pick} on ${on} (${plan.steps.length} poses, checked)`);
+      ctl.runPoses(plan.steps.map(s => s.counts), 60, plan.steps.map(s => s.label));
+      await until(() => !ctl.busy && world.settled());
+      await pause(0.6);
+    }
+    if (!demoAbort) {
+      // finale: swing the arm aside (checked like every other move), then let physics play
+      pathLine.visible = pathDots.visible = false;
+      const aside = ctl.commands.slice(); aside[0] = 520;           // S1 to the arm's left, away from the tower
+      if (!moveIsClear(ctl.commands.slice(), aside)) { ctl.runPoses([aside], 60, ['swing aside']); await until(() => !ctl.busy); }
+      log('demo: physics finale, dropping cubes onto the tower', 'ok');
+      const top = world.cube('yellow');
+      // green lands flat on top (a 4th level by gravity), then red clips the top edge and knocks the tower over
+      const drops = [['green', top.p[0], top.p[1], top.p[2] + 9, [0, 0, 1.5], 2.0], ['red', top.p[0] + 1.6, top.p[1] + 0.4, top.p[2] + 16, [6, -5, 2], 3.0]];
+      for (const [colour, x, y, z, w, wait] of drops) {
+        if (demoAbort) break;
+        let c = world.cube(colour);
+        if (!c) c = world.addCube(colour, colour, x, y, 0, 0);
+        c.p = [x, y, z]; c.v = [0, 0, -20]; c.w = w; c.R = [1, 0, 0, 0, 1, 0, 0, 0, 1]; c.state = 'awake'; c.sleepT = 0;
+        renderCubes();
+        await pause(wait);
+      }
+      // more drops: a cube falling on its corner, one thrown at the tower (knocks it over), then a rain of cubes
+      const colours = Object.keys(COLOURS);
+      const spawn = (colour, p, R, v, w) => {
+        let id = colour, n = 2; while (world.cube(id)) id = `${colour}${n++}`;
+        const c = world.addCube(id, colour, p[0], p[1], 0, 0);
+        c.p = p; c.R = R; c.v = v; c.w = w; c.state = 'awake'; c.sleepT = 0;
+        renderCubes();
+        return c;
+      };
+      const rot = (axis, deg) => {                                   // rotation matrix, row-major, about a unit axis
+        const n = Math.hypot(...axis), [x, y, z] = axis.map(v => v / n), a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), t = 1 - c;
+        return [t * x * x + c, t * x * y - s * z, t * x * z + s * y, t * x * y + s * z, t * y * y + c, t * y * z - s * x, t * x * z - s * y, t * y * z + s * x, t * z * z + c];
+      };
+      if (!demoAbort) { log('demo: a cube dropped on its corner'); spawn('blue', [7, 17, 14], rot([1, 1, 0], 54.7), [0, 0, -10], [0, 0, 3]); await pause(2.5); }
+      if (!demoAbort) { log('demo: a cube thrown at the tower'); const t = world.cube('yellow'); spawn('orange', [-15, t.p[1], 8.5], rot([0, 0, 1], 30), [160, 0, 30], [0, -8, 4]); await pause(3); }
+      if (!demoAbort) {
+        log('demo: cube rain');
+        let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+        for (let i = 0; i < 6 && !demoAbort; i++) {
+          spawn(colours[i % colours.length], [-7 + 14 * rnd(), 15 + 8 * rnd(), 16 + 14 * rnd()], rot([rnd() - 0.5, rnd() - 0.5, rnd() - 0.5], 360 * rnd()),
+            [(rnd() - 0.5) * 20, (rnd() - 0.5) * 20, -10], [(rnd() - 0.5) * 12, (rnd() - 0.5) * 12, (rnd() - 0.5) * 12]);
+          await pause(0.35);
+        }
+      }
+      await until(() => world.settled(), 20);
+      log('demo: done. "Reset" in the Scene panel restores the cubes', 'ok');
+    }
+  } catch (e) { log(`demo: ${e.message}`, 'err'); toast(e.message); }
+  pathLine.visible = pathDots.visible = $('show-path').checked;
+  $('show-ghost').checked = ghostWas;
+  demoRunning = false; demoAbort = false;
+  $('demo-btn').textContent = '▶ Demo: build a tower';
+}
+{
+  const b = document.createElement('button');
+  b.id = 'demo-btn'; b.className = 'primary';
+  b.textContent = '▶ Demo: build a tower';
+  b.title = 'Picks and stacks cubes with the planner, then drops cubes onto the tower to show the physics (simulation only)';
+  b.onclick = runDemo;
+  $('plan-btn').after(b);
 }
 
 // ---------------- scene panel ----------------

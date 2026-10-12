@@ -147,6 +147,7 @@ function segmentClear(w, a, b) {
 function insertVias(world, steps, start, servos) {
   const w = new World(servos);
   w.restore(world.snapshot());
+  w.margin = PLAN.transitMargin;
   let cur = start.slice(), added = 0;
   w.step(0, cur);
   for (let i = 0; i < steps.length; i++) {
@@ -254,6 +255,7 @@ const PERMS = arr => arr.length <= 1 ? [arr] : arr.flatMap((x, i) => PERMS([...a
 export function toMoves(world, plan, start, servos = SERVOS) {
   const w = new World(servos);
   w.restore(world.snapshot());
+  w.margin = PLAN.transitMargin;
   let cur = start.slice();
   const moves = [], notes = [];
   w.step(0, cur);

@@ -89,6 +89,7 @@ export const PLAN = {
   hoverStacked: 2.0,    // above level 1 and higher
   descentStep: 1.0,     // cm between IK waypoints on a vertical descent
   clearance: 0.05,      // collision tolerance, cm (0,5 mm)
+  transitMargin: 0.15,  // planned paths keep 1,5 mm between the arm (or a held cube) and other cubes
 };
 
 export const COLOURS = {

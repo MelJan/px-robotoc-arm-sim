@@ -61,3 +61,17 @@ test('the arm sweeping through a cube pushes it away and reports the contact', (
   assert.ok(pushed, 'contact reported');
   assert.ok(Math.hypot(c.p[0] - before[0], c.p[1] - before[1]) > 0.5, `cube moved ${Math.hypot(c.p[0] - before[0], c.p[1] - before[1])}`);
 });
+
+test('cubes landing next to each other all fall asleep (no wake ping-pong)', () => {
+  const w = new World();
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 8; i++) {
+    const c = w.addCube(`c${i}`, 'red', -4 + 8 * rnd(), 14 + 6 * rnd(), 2 + i, 360 * rnd());
+    c.w = [(rnd() - 0.5) * 10, (rnd() - 0.5) * 10, (rnd() - 0.5) * 10];
+  }
+  run(w, 10);
+  const awake = w.cubes.filter(c => c.state === 'awake').map(c => c.id);
+  assert.deepEqual(awake, [], `still awake after 10 s: ${awake}`);
+  // resting on the board (centre 1,325) or, if one tumbled over the edge, on the desk 1 cm lower
+  assert.ok(w.cubes.every(c => c.p.every(Number.isFinite) && (c.p[2] > 1.2 || (c.p[2] > 0.2 && !w.onBoard(c.p[0], c.p[1])))), 'every cube rests on the board or the desk');
+});

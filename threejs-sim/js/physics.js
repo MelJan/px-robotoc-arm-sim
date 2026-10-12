@@ -291,9 +291,18 @@ export function stepPhysics(cubes, kin, h) {
       if (dot(d, d) > (CUBE * 1.75) ** 2) continue;
       const m = boxBoxManifold({ c: a.p, R: a.R, h: [HALF, HALF, HALF] }, { c: b.p, R: b.R, h: [HALF, HALF, HALF] });
       if (!m) continue;
-      if (a.state === 'asleep') wake(a);
-      if (b.state === 'asleep') wake(b);
-      for (const q of m.pts) contacts.push({ A: a, B: b, n: m.n, p: q.p, depth: q.depth, mu: PHYS.mu.cube, kin: null });
+      // A resting cube is only woken by a neighbour that really moves or pushes into it; otherwise
+      // it acts as a fixed support. (Waking it on any touch makes two settling neighbours wake each
+      // other in turn, so neither ever sleeps.)
+      const moving = c => len(c.v) > PHYS.sleepV * 3 || len(c.w) > PHYS.sleepW * 3;
+      const pushing = m.pts.some(q => q.depth > 0.03);
+      if (a.state === 'asleep' && (moving(b) || pushing)) wake(a);
+      if (b.state === 'asleep' && (moving(a) || pushing)) wake(b);
+      for (const q of m.pts) {
+        if (a.state === 'awake' && b.state === 'awake') contacts.push({ A: a, B: b, n: m.n, p: q.p, depth: q.depth, mu: PHYS.mu.cube, kin: null });
+        else if (b.state === 'awake') contacts.push({ A: null, B: b, n: m.n, p: q.p, depth: q.depth, mu: PHYS.mu.cube, kin: [0, 0, 0] });              // a rests
+        else if (a.state === 'awake') contacts.push({ A: null, B: a, n: m.n.map(v => -v), p: q.p, depth: q.depth, mu: PHYS.mu.cube, kin: [0, 0, 0] }); // b rests
+      }
     }
   }
   // held cubes act like arm parts on free cubes

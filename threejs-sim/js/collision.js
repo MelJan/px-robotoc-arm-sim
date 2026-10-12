@@ -187,7 +187,12 @@ export function armShapes(f, gap) {
  * arm: shapes from armShapes; cubes: [{ id, p, yaw|R, held }]; board: { w, d, axisToBackEdge }.
  * Returns [{ a, b, sep }] for every pair closer than -tol (penetrating by more than tol).
  */
-export function findContacts(arm, cubes, board, tol = 0.05) {
+/**
+ * `margin` (cm, planning only): arm parts and a held cube must also keep this much clearance
+ * from free cubes; a near miss closer than that counts as a contact.
+ */
+export function findContacts(arm, cubes, board, tol = 0.05, margin = 0) {
+  const limitCube = Math.max(-tol, margin);
   const out = [];
   const near = (x, y, extra) => {
     const dx = x.bound.c[0] - y.bound.c[0], dy = x.bound.c[1] - y.bound.c[1], dz = x.bound.c[2] - y.bound.c[2];
@@ -215,7 +220,7 @@ export function findContacts(arm, cubes, board, tol = 0.05) {
     if (C.held && A.link >= LINK.hand) continue;
     if (!near(A, C, 0)) continue;
     const sep = separation(A, C);
-    if (sep < -tol) out.push({ a: A.name, b: C.name, sep });
+    if (sep < limitCube) out.push({ a: A.name, b: C.name, sep });
   }
   // Cubes against each other and the board.
   for (let i = 0; i < cubeShapes.length; i++) {
@@ -226,7 +231,7 @@ export function findContacts(arm, cubes, board, tol = 0.05) {
       const D = cubeShapes[j];
       if (!near(C, D, 0)) continue;
       const sep = separation(C, D);
-      if (sep < -tol) out.push({ a: C.name, b: D.name, sep });
+      if (sep < (C.held || D.held ? limitCube : -tol)) out.push({ a: C.name, b: D.name, sep });
     }
   }
   return out;
