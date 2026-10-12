@@ -1,21 +1,17 @@
 # PX-robo-arm-simulator
 
-Interactive Three.js digital twin of the measured PX robot arm. It renders a
-simplified S1-S6 kinematic chain in the browser and lets a user explore servo
-counts, reference poses, tool-centre-point position and board clearance.
+The browser application is the Three.js implementation of the PX robot-arm
+digital twin. It combines a photo-informed visual model with millimetre-based
+kinematics, inverse kinematics, collision checking, trajectory planning and a
+Rapier3D physics world. It uses Vite and plain JavaScript; no frontend framework
+or Blender runtime is involved.
 
-This application is deliberately offline. It does not import the physical-arm
-API and cannot send commands to the robot.
+Simulation is the default. Merely opening the page never prepares or commands
+the physical arm.
 
-## Requirements
+## Run
 
-- Node.js 20 or newer
-- npm
-- A browser with WebGL support
-
-## Run locally
-
-From the repository root:
+Requirements: Node.js 20 or newer and a WebGL-capable browser.
 
 ```sh
 cd web
@@ -23,69 +19,101 @@ npm install
 npm run dev
 ```
 
-Open the URL printed by Vite, normally <http://localhost:5173>. Keep the
-terminal running while using the simulator. Stop it with `Ctrl+C`.
-
-`npm install` is only necessary after the first checkout or when dependencies
-change. On later runs, `npm run dev` is enough.
-
-## Controls
-
-- Drag in the viewport to orbit the camera.
-- Scroll or pinch to zoom.
-- Use the S1-S6 sliders to change commanded servo counts.
-- Select **HOME**, **PARK** or **Straight-up** to animate to a reference pose.
-- Select **Play HOME -> PARK** to demonstrate a complete pose transition.
-- Toggle **Joint axes** to show or hide the world and joint-axis helpers.
-- Select **Reset view** to restore the initial camera position.
-
-The TCP readout reports the gripper tool-centre point in centimetres. Clearance
-is measured from the board's top plane. The S6 readout displays the estimated
-gap between the gripper pads rather than an angle.
-
-## Production build
+Open the URL printed by Vite, normally <http://localhost:5173>. Other commands:
 
 ```sh
-cd web
+npm test
 npm run build
-```
-
-The static production site is written to `web/dist/`. Preview that build with:
-
-```sh
 npm run preview
 ```
 
-## Project layout
+Rapier's compatibility package embeds its WebAssembly runtime. It is loaded as
+a separate lazy chunk, so Vite reports a non-fatal large-chunk warning during a
+production build.
+
+## What is implemented
+
+- detailed generated geometry for the board, raised two-plate fixture,
+  brackets, horns, servos, fasteners, cable runs and parallel-link claw;
+- four dynamic 26.5 mm solid cubes;
+- pure millimetre-based S1-S6 forward kinematics and numerical IK;
+- capsule and box collision checks for the board, fixture, workpieces and
+  non-adjacent robot parts;
+- a deterministic optimizing planner with direct/staged seeds, RRT*-style
+  search, shortcutting and STOMP-style smoothing;
+- weighted motion cost covering clearance, changed servos, count travel,
+  estimated duration, acceleration/jerk proxy and TCP distance;
+- text pick/place tasks with approach, grasp, lift, place, release and retreat
+  waypoints;
+- collision verification of every sampled path segment;
+- coordinated virtual playback and controller-compatible one-servo-at-a-time
+  playback;
+- Rapier fixed board/fixture colliders, kinematic arm colliders, dynamic cubes
+  and simulated grasp/release;
+- HOME, observed commissioning PARK and straight-up references; and
+- simulation, connected read-only, operational-disarmed, operational-armed and
+  fault/stopped modes.
+
+The planner optimizes the configured engineering cost. It does not claim a
+mathematical proof of the globally shortest path or literally solve a
+continuous least-action variational problem.
+
+## Controls
+
+Joint sliders show servo counts and provisional model angles. **Go HOME** and
+**Go PARK** plan and verify the requested transition before playback. PARK is
+modelled as supported contact on the raised fixture plate, whose provisional
+photo-derived top is 25 mm above the board.
+
+Enter a task such as:
 
 ```text
-web/
-├── index.html                 Browser entry point and page title
-├── package.json              npm scripts and Three.js dependency
-├── public/
-│   └── arm-spec.json         Browser-readable dimensions and calibration
-└── src/
-    ├── main.js               UI, Three.js scene and kinematic updates
-    └── style.css             Responsive application styling
+Move the red cube to the blue zone
+Move the orange cube to (80, 240) mm
 ```
 
-For the implementation details, coordinate conventions and extension points,
-see [`../docs/threejs-implementation.md`](../docs/threejs-implementation.md).
+Select **Plan**, inspect the path and verification result, then select **Run in
+sim**. The planner first scores its millimetre RRT*/smoothed candidate against
+the detailed bracket/gripper collision model. If that candidate is rejected,
+the UI uses the photo-model-aware fallback only after both collision models
+verify it. The playback selector switches between simultaneous joint
+interpolation and a sequence in which only one servo command changes at a time.
 
-## Calibration status
+The guarded real-mode controls are under **Tools → Mode & robot API** so the
+restored dark split-pane layout, camera tools and scene controls remain intact.
 
-`public/arm-spec.json` currently contains measured geometry and provisional
-tick-to-angle calibration. The interface labels this explicitly. Do not treat
-the rendered pose as an exact prediction until every servo zero, direction and
-usable range has been verified against the physical arm.
+## Operational mode
 
-The repository's long-term source of truth is `spec/arm.toml`. The JSON file
-should eventually be generated from that TOML specification during the build,
-rather than maintained independently.
+The optional adapter targets the existing `lutich/robot-arm` FastAPI contract:
 
-## Safety boundary
+- `GET /api/state` for a read-only connection;
+- `POST /api/power_on` only after explicit supported-PARK confirmation;
+- `POST /api/move` for verified single-servo steps;
+- `POST /api/power_off` to return to PARK and disable outputs; and
+- `POST /api/stop` for an emergency stop.
 
-The web simulator has no network calls except loading its own static JSON file.
-It contains no WebSocket, serial, GPIO or robot-control client. Adding live
-robot connectivity should be a separate, explicitly enabled adapter with
-limits, an emergency stop and clear simulated/live mode indicators.
+The hardware backend requires POST requests to originate from the same origin.
+Therefore a Vite page on another port cannot control it. The production app
+must be served by, or reverse-proxied through, the robot backend before the
+connected modes can work. The UI validates that `/api/state` is a real robot
+state document and never falls through to Vite's HTML page.
+
+The physical arm has no position feedback. Connected values are always labelled
+as **commanded pose**, never measured pose. Operational execution additionally
+requires an exact match between the plan's first waypoint and the backend's six
+held commands. Server-side bounds and guards remain authoritative.
+
+## Specification status
+
+`public/arm-spec.json` schema version 2 uses millimetres throughout. It keeps
+measured dimensions, provisional assumptions, observed commissioning poses and
+historical unvalidated bounds in separate provenance categories. It contains
+no validated safe limits.
+
+The physical HOME and PARK records both use S6=650. The S6 490 open count is a
+gripper modelling endpoint, not a replacement HOME command. PARK remains an
+observed commissioning reference and is not declared motion-validated or safe
+for unattended hardware execution.
+
+See [the implementation document](../docs/threejs-implementation.md) for the
+architecture and validation details.
