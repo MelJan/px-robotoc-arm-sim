@@ -1,0 +1,29 @@
+{
+  "metadata": {
+    "name": "PX Robot Arm",
+    "units": "metres",
+    "calibrationStatus": "provisional",
+    "source": "docs/arm-dimensions.md and docs/servo-calibration.md"
+  },
+  "dimensions": {
+    "board": [0.3, 0.38, 0.01],
+    "boardCenter": [0, 0.175, -0.005],
+    "shoulderHeight": 0.096,
+    "upperArm": 0.105,
+    "forearm": 0.126,
+    "wrist": 0.067,
+    "gripperOpenLength": 0.1,
+    "gripperClosedLength": 0.115,
+    "gripperOpenGap": 0.045,
+    "gripperClosedGap": 0,
+    "testCube": 0.0265
+  },
+  "joints": [
+    {"id":"S1","name":"Base rotation","min":90,"max":660,"home":320,"park":330,"zero":320,"ticksPerDegree":3.06,"direction":1,"axis":"Z","status":"provisional"},
+    {"id":"S2","name":"Shoulder","min":185,"max":660,"home":427,"park":540,"zero":378,"ticksPerDegree":2.44,"direction":1,"axis":"-X","status":"provisional"},
+    {"id":"S3","name":"Elbow","min":90,"max":660,"home":403,"park":580,"zero":216,"ticksPerDegree":2.67,"direction":1,"axis":"-X","status":"provisional"},
+    {"id":"S4","name":"Wrist flexion","min":90,"max":660,"home":220,"park":195,"zero":470,"ticksPerDegree":2.78,"direction":-1,"axis":"-X","status":"provisional"},
+    {"id":"S5","name":"Wrist rotation","min":90,"max":660,"home":480,"park":480,"zero":480,"ticksPerDegree":2.56,"direction":1,"axis":"Z","status":"provisional"},
+    {"id":"S6","name":"Gripper","min":490,"max":660,"home":650,"park":650,"status":"provisional"}
+  ]
+}
