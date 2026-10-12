@@ -118,7 +118,10 @@ export function initCameraTab(ctx) {
   };
   async function readStatus() {
     try {
-      const st = await (await fetch(`${ctx.linkBase()}/api/camera/status`, { cache: 'no-store' })).json();
+      const r = await fetch(`${ctx.linkBase()}/api/camera/status`, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}. For the real camera start the page server with --camera http://10.102.4.103:8765 (npm run lab)`);
+      const st = await r.json();
+      if (st.source === 'mock') st.source = 'mock camera (the saved frame; for the real one: npm run lab)';
       const f = st.latest_frame || {};
       $('cam-status').textContent = st.enabled === false ? 'Camera disabled on the controller'
         : `${st.available ? 'Camera active' : 'Camera not delivering frames'} · ${st.source || ''} · ${(f.delivered_fps ?? 0).toFixed(1)} fps · ` +

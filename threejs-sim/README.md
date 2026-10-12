@@ -12,6 +12,7 @@ Node is only needed for the small server and the tests.
 ```powershell
 cd threejs-sim
 node server.mjs --mock                 # simulator + a mock controller, http://127.0.0.1:8770/
+node server.mjs --mock --camera http://10.102.4.103:8765               # mock arm + the REAL camera (GET /api/camera/* only), "npm run lab"
 node server.mjs                        # simulator only
 node server.mjs --controller http://10.102.4.103:8765                  # + the real controller, READ ONLY
 node server.mjs --controller http://10.102.4.103:8765 --allow-motion   # only when the team agrees, someone at the stop button

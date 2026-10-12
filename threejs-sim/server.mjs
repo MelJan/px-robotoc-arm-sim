@@ -7,10 +7,15 @@
 //                                                     + forwards /api/* to the real controller:
 //                                                       GETs and /api/stop always, every other POST
 //                                                       only with --allow-motion
+//   node server.mjs --mock --camera http://10.102.4.103:8765
+//                                                     mock arm + the REAL camera: forwards only
+//                                                       GET /api/camera/* (status, snapshot, video)
 //   --port 8770  --host 127.0.0.1
 //
 // The real controller only accepts POSTs whose Origin is its own address; the proxy sends
 // that Origin, so the page here can command the arm once --allow-motion is given.
+// It also sends no CORS headers, so a page from elsewhere can show its video but cannot read
+// the pixels for tracking; going through this server (same origin) solves that.
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -30,6 +35,8 @@ const CONTROLLER = opt('--controller', null);
 const ALLOW_MOTION = flag('--allow-motion');
 const MOCK = flag('--mock');
 if (MOCK && CONTROLLER) { console.error('use either --mock or --controller'); process.exit(2); }
+// Where camera reads go: the controller if given, else --camera, else the mock's saved frame.
+const CAMERA = CONTROLLER || opt('--camera', null);
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
@@ -64,9 +71,11 @@ function readBody(req) {
 
 // ---------------- proxy to the real controller ----------------
 
-async function proxy(req, res) {
-  const target = new URL(req.url, CONTROLLER);
+async function proxy(req, res, base = CONTROLLER, cameraOnly = false) {
+  const target = new URL(req.url, base);
   const isPost = req.method === 'POST';
+  if (cameraOnly && (req.method !== 'GET' || !target.pathname.startsWith('/api/camera/')))
+    return sendJson(res, 403, { error: 'The camera link only reads /api/camera/* (GET).' });
   if (isPost && !ALLOW_MOTION && target.pathname !== '/api/stop')
     return sendJson(res, 403, { error: 'Motion is disabled in this proxy. Restart server.mjs with --allow-motion to send moves.' });
   if (!['GET', 'POST'].includes(req.method)) return sendJson(res, 405, { error: 'GET or POST only' });
@@ -160,10 +169,11 @@ const server = http.createServer(async (req, res) => {
   try {
     if (req.url.startsWith('/api/')) {
       if (CONTROLLER) return await proxy(req, res);
+      if (CAMERA && req.url.startsWith('/api/camera/')) return await proxy(req, res, CAMERA, true);
       if (MOCK) return await mockApi(req, res);
       return sendJson(res, 404, { error: 'No controller. Start with --mock or --controller <url>.' });
     }
-    if (req.url === '/local/info') return sendJson(res, 200, { backend: CONTROLLER ? 'proxy' : MOCK ? 'mock' : 'none', allowMotion: !!(MOCK || ALLOW_MOTION) });
+    if (req.url === '/local/info') return sendJson(res, 200, { backend: CONTROLLER ? 'proxy' : MOCK ? 'mock' : 'none', allowMotion: !!(MOCK || ALLOW_MOTION), camera: CAMERA || (MOCK ? 'mock' : null) });
     if (req.url.startsWith('/ref/camera-2026-10-12.jpg')) {
       const f = path.join(REPO, 'docs', 'images', 'photos', 'controller-camera-2026-10-12.jpg');
       res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-cache' });
@@ -181,4 +191,5 @@ server.listen(PORT, HOST, () => {
   console.log(`three.js arm simulator: http://${HOST}:${PORT}/`);
   if (MOCK) console.log('  /api -> mock controller (in this process)');
   if (CONTROLLER) console.log(`  /api -> ${CONTROLLER} (${ALLOW_MOTION ? 'MOTION ALLOWED' : 'read only, stop allowed'})`);
+  else if (CAMERA) console.log(`  /api/camera/* -> ${CAMERA} (GET only)`);
 });
