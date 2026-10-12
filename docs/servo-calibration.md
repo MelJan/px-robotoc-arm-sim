@@ -63,3 +63,4 @@ No unit on the sheet, probably cm of gripper opening.
 - S2: confirm start value 467 vs 407.
 - For every joint: which tick direction is which physical direction (left/right, up/down, open/close)?
 - S4: minus 90° from home would be below 0 ticks, so the home pose sits at one end of the wrist range. Confirm the usable tick range per servo (0 to 1000? 0 to 4095?).
+- For every joint: the joint angle at the home tick. `pick-and-place-plan.md` needs it to turn computed angles into ticks.

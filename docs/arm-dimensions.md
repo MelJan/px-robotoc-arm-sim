@@ -121,4 +121,4 @@ The gripper tick range in `servo-calibration.md` is 490 to 650.
 - **S1 position along the 30 cm edge** is assumed to be centred.
 - **Gripper direction:** does tick value 650 mean open or closed?
 - **Not measured:** board thickness, robot base footprint, link widths and servo body sizes.
-- **Home pose angles:** to place the model in the servo home position (320 / 427 / 403 / 220 / 480 / 650), we need the joint angle at each home tick value.
+- **Home pose angles:** to place the model in the servo home position (320 / 427 / 403 / 220 / 480 / 650), we need the joint angle at each home tick value. The pick-and-place plan needs the same values, see `pick-and-place-plan.md`.
