@@ -1,21 +1,12 @@
 #!/usr/bin/env node
-// Static server for the three.js simulator, with two optional /api backends. No dependencies.
+// Static server for the simulation-only three.js application. No dependencies.
 //
-//   node server.mjs                                   simulator only, http://127.0.0.1:8770/
-//   node server.mjs --mock                            + a mock controller (same API, same motion rules)
-//   node server.mjs --controller http://10.102.4.103:8765
-//                                                     + forwards /api/* to the real controller:
-//                                                       GETs and /api/stop always, every other POST
-//                                                       only with --allow-motion
-//   node server.mjs --mock --camera http://10.102.4.103:8765
-//                                                     mock arm + the REAL camera: forwards only
-//                                                       GET /api/camera/* (status, snapshot, video)
+//   node server.mjs                                   simulator, http://127.0.0.1:8770/
+//   node server.mjs --mock                            + local mock API for development/tests
 //   --port 8770  --host 127.0.0.1
 //
-// The real controller only accepts POSTs whose Origin is its own address; the proxy sends
-// that Origin, so the page here can command the arm once --allow-motion is given.
-// It also sends no CORS headers, so a page from elsewhere can show its video but cannot read
-// the pixels for tracking; going through this server (same origin) solves that.
+// There is deliberately no controller or camera proxy. This process never connects to the
+// Raspberry Pi and cannot forward commands to physical hardware.
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -31,12 +22,12 @@ const opt = (name, dflt) => { const i = args.indexOf(name); return i >= 0 ? args
 const flag = name => args.includes(name);
 const PORT = Number(opt('--port', 8770));
 const HOST = opt('--host', '127.0.0.1');
-const CONTROLLER = opt('--controller', null);
-const ALLOW_MOTION = flag('--allow-motion');
 const MOCK = flag('--mock');
-if (MOCK && CONTROLLER) { console.error('use either --mock or --controller'); process.exit(2); }
-// Where camera reads go: the controller if given, else --camera, else the mock's saved frame.
-const CAMERA = CONTROLLER || opt('--camera', null);
+const FORBIDDEN = ['--controller', '--camera', '--allow-motion'].find(name => flag(name));
+if (FORBIDDEN) {
+  console.error(`${FORBIDDEN} is not supported: this build is simulation-only and never connects to robot hardware.`);
+  process.exit(2);
+}
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
@@ -67,36 +58,6 @@ function readBody(req) {
     req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
-}
-
-// ---------------- proxy to the real controller ----------------
-
-async function proxy(req, res, base = CONTROLLER, cameraOnly = false) {
-  const target = new URL(req.url, base);
-  const isPost = req.method === 'POST';
-  if (cameraOnly && (req.method !== 'GET' || !target.pathname.startsWith('/api/camera/')))
-    return sendJson(res, 403, { error: 'The camera link only reads /api/camera/* (GET).' });
-  if (isPost && !ALLOW_MOTION && target.pathname !== '/api/stop')
-    return sendJson(res, 403, { error: 'Motion is disabled in this proxy. Restart server.mjs with --allow-motion to send moves.' });
-  if (!['GET', 'POST'].includes(req.method)) return sendJson(res, 405, { error: 'GET or POST only' });
-  const body = isPost ? await readBody(req) : undefined;
-  const upstream = http.request(target, {
-    method: req.method,
-    headers: {
-      Host: target.host, ...(isPost ? { Origin: `${target.protocol}//${target.host}`, 'Content-Type': 'application/json', 'Content-Length': body.length } : {}),
-    },
-    timeout: 20000,
-  }, up => {
-    res.writeHead(up.statusCode, { 'Content-Type': up.headers['content-type'] || 'application/octet-stream', 'Cache-Control': 'no-store' });
-    up.pipe(res);
-  });
-  upstream.on('timeout', () => upstream.destroy(new Error('controller timed out')));
-  upstream.on('error', e => { if (!res.headersSent) sendJson(res, 502, { error: `controller: ${e.message}` }); else res.end(); });
-  // When the browser stops reading (closed tab, stopped video), close the request to the Pi too,
-  // so a camera stream never keeps running on its own.
-  res.on('close', () => upstream.destroy());
-  if (target.pathname.endsWith('stream.mjpg')) console.log(`camera stream opened (read only)`);
-  if (isPost) { console.log(`→ ${target.pathname} ${body}`); upstream.end(body); } else upstream.end();
 }
 
 // ---------------- mock controller ----------------
@@ -168,12 +129,9 @@ async function mockApi(req, res) {
 const server = http.createServer(async (req, res) => {
   try {
     if (req.url.startsWith('/api/')) {
-      if (CONTROLLER) return await proxy(req, res);
-      if (CAMERA && req.url.startsWith('/api/camera/')) return await proxy(req, res, CAMERA, true);
       if (MOCK) return await mockApi(req, res);
-      return sendJson(res, 404, { error: 'No controller. Start with --mock or --controller <url>.' });
+      return sendJson(res, 404, { error: 'No API backend. The application is simulation-only; use --mock for the local development API.' });
     }
-    if (req.url === '/local/info') return sendJson(res, 200, { backend: CONTROLLER ? 'proxy' : MOCK ? 'mock' : 'none', allowMotion: !!(MOCK || ALLOW_MOTION), camera: CAMERA || (MOCK ? 'mock' : null) });
     // Repo photos, read only: the model comparison (tools/compare.mjs) overlays them on renders.
     const ph = req.url.match(/^\/photos\/([\w.-]+\.(?:jpe?g|png))$/i);
     if (ph) {
@@ -197,7 +155,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`three.js arm simulator: http://${HOST}:${PORT}/`);
-  if (MOCK) console.log('  /api -> mock controller (in this process)');
-  if (CONTROLLER) console.log(`  /api -> ${CONTROLLER} (${ALLOW_MOTION ? 'MOTION ALLOWED' : 'read only, stop allowed'})`);
-  else if (CAMERA) console.log(`  /api/camera/* -> ${CAMERA} (GET only)`);
+  if (MOCK) console.log('  /api -> local mock controller (simulation only)');
 });

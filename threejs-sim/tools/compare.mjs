@@ -67,7 +67,7 @@ if (!ready) { console.error('the simulator page did not load'); quit(1); }
 // compose the three panels and return them as a JPEG data URL.
 async function shoot(v, look) {
   const s = window.sim, $ = id => document.getElementById(id);
-  for (const id of ['show-path', 'show-ghost', 'show-shapes']) { $(id).checked = false; $(id).dispatchEvent(new Event('change')); }
+  for (const id of ['show-path', 'show-shapes']) { $(id).checked = false; $(id).dispatchEvent(new Event('change')); }
   s.ctl.rearm(); s.ctl.setCommands(v.counts || s.ctl.poses[v.pose || 'HOME'].slice());
   s.world.cubes = []; s.world.holding = null;
   for (const [colour, x, y, level = 0, yaw = 0] of v.cubes || []) s.world.addCube(colour, colour, x, y, level, yaw);

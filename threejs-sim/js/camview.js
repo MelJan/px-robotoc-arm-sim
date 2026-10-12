@@ -1,8 +1,7 @@
-// Camera tab: what the OAK camera sees in the simulation, the real frame on top of it,
+// Camera tab: what the OAK camera sees in the simulation, with a reference frame on top,
 // and the calibration of the camera from the printed mat markers.
 //
-// Read only: the real frame comes from a saved file, a file you pick, or one snapshot GET
-// (/api/camera/snapshot.jpg) when you ask for it. Nothing is ever sent to the controller.
+// Reference frames come only from the repository or a local file selected by the user.
 
 import * as THREE from 'three';
 import { CAMERA, MAT } from './config.js';
@@ -52,7 +51,7 @@ export function defaultCalibration() {
 }
 
 /**
- * Wire up the camera tab. ctx: { scene, hideForCamera(fn), linkBase(), onApply(cal), log, toast }.
+ * Wire up the camera tab. ctx: { scene, hideForCamera(fn), onApply(cal), log, toast }.
  */
 export function initCameraTab(ctx) {
   const simCanvas = $('cam-sim'), overlay = $('cam-overlay'), photo = $('cam-photo');
@@ -73,73 +72,22 @@ export function initCameraTab(ctx) {
 
   const visible = () => !$('tab-camera').hidden;
 
-  // ---- frame sources (all read only)
+  // ---- local frame sources
   //   saved  the frame from 2026-10-12 in the repo
-  //   live   one snapshot per "Refresh" (GET /api/camera/snapshot.jpg)
-  //   video  the controller's MJPEG stream (GET /api/camera/stream.mjpg) for live tracking; it is
-  //          closed when you pick another source, hide the tab, or after VIDEO_LIMIT_MIN minutes
   //   file   an image from disk
-  const VIDEO_LIMIT_MIN = 10;
-  let videoTimer = null;
   const setPhoto = url => { photo.src = url; };
-  const stopVideo = reason => {
-    if (!videoTimer && !photo.src.includes('stream.mjpg')) return;
-    clearTimeout(videoTimer); videoTimer = null;
-    photo.removeAttribute('src');                       // closes the stream (and the proxy's request to the Pi)
-    stopTracking();
-    if (reason) { ctx.log(`camera: video stopped (${reason})`); $('cam-status').textContent = `Video stopped: ${reason}`; }
-  };
   const loadSource = () => {
-    stopVideo(source === 'video' ? 'source changed' : '');
     source = $('cam-source').value;
-    $('cam-refresh').disabled = !(source === 'live' || source === 'video');
-    $('cam-refresh').textContent = source === 'video' ? 'Restart video' : 'Refresh snapshot';
     if (source === 'saved') { setPhoto('ref/camera-2026-10-12.jpg'); points = savedPairs(); }
-    else if (source === 'live') { points = []; refreshLive(); }
-    else if (source === 'video') { points = []; startVideo(); }
     else if (source === 'file') { points = []; $('cam-file').click(); }
     draw();
   };
-  const startVideo = async () => {
-    await readStatus();
-    setPhoto(`${ctx.linkBase()}/api/camera/stream.mjpg?t=${Date.now()}`);
-    // the video's load event is not reliable for MJPEG; calibrate from a frame shortly after it starts
-    if ($('cam-auto-on').checked) setTimeout(() => { if (source === 'video') autoCalibrate({ quiet: true, announce: true }); }, 1500);
-    ctx.log(`camera: video stream opened (GET only, stops after ${VIDEO_LIMIT_MIN} min)`);
-    clearTimeout(videoTimer);
-    videoTimer = setTimeout(() => stopVideo(`${VIDEO_LIMIT_MIN} min limit`), VIDEO_LIMIT_MIN * 60000);
-  };
-  document.addEventListener('visibilitychange', () => { if (document.hidden && source === 'video') stopVideo('page hidden'); });
-  // Two GETs per refresh: the camera's status and one frame. The controller runs its camera
-  // whenever it runs; reading starts nothing and nothing is sent.
-  const refreshLive = async () => {
-    if (source === 'video') return startVideo();
-    if (source !== 'live') return;
-    await readStatus();
-    setPhoto(`${ctx.linkBase()}/api/camera/snapshot.jpg?t=${Date.now()}`);
-    ctx.log('camera: status and one snapshot read (GET only)');
-  };
-  async function readStatus() {
-    try {
-      const r = await fetch(`${ctx.linkBase()}/api/camera/status`, { cache: 'no-store' });
-      if (!r.ok) throw new Error(`HTTP ${r.status}. For the real camera start the page server with --camera http://10.102.4.103:8765 (npm run lab)`);
-      const st = await r.json();
-      if (st.source === 'mock') st.source = 'mock camera (the saved frame; for the real one: npm run lab)';
-      const f = st.latest_frame || {};
-      $('cam-status').textContent = st.enabled === false ? 'Camera disabled on the controller'
-        : `${st.available ? 'Camera active' : 'Camera not delivering frames'} · ${st.source || ''} · ${(f.delivered_fps ?? 0).toFixed(1)} fps · ` +
-          `frame ${Math.round(st.frame_age_ms ?? 0)} ms old · exposure ${f.time_us ?? '?'} µs, ISO ${f.iso ?? '?'}, focus ${f.lens_position ?? '?'}` +
-          (f.captured_at ? ` · ${new Date(f.captured_at).toLocaleTimeString()}` : '');
-    } catch (e) { $('cam-status').textContent = `Camera status unavailable: ${e.message}`; }
-  }
   $('cam-source').onchange = loadSource;
-  $('cam-refresh').onclick = refreshLive;
   $('cam-file').onchange = e => { const f = e.target.files[0]; if (f) setPhoto(URL.createObjectURL(f)); };
-  photo.onerror = () => ctx.toast('No camera frame (live needs the page served by server.mjs --controller or --mock)');
-  // A new real frame (snapshot or image file): find the markers and refit the camera right away,
-  // so the overlay and the camera in the 3D model follow a camera that has been moved.
+  photo.onerror = () => ctx.toast('The selected reference image could not be loaded');
+  // A new reference frame: find markers and refit the camera right away.
   photo.onload = () => {
-    if (source !== 'video' && $('cam-auto-on').checked) setTimeout(() => autoCalibrate({ quiet: true, announce: true }), 50);
+    if ($('cam-auto-on').checked) setTimeout(() => autoCalibrate({ quiet: true, announce: true }), 50);
   };
   $('cam-opacity').oninput = () => { photo.style.opacity = $('cam-opacity').value / 100; };
   for (const id of ['cam-show-sim', 'cam-show-marks', 'cam-show-grid']) $(id).onchange = () => { simCanvas.style.visibility = $('cam-show-sim').checked ? 'visible' : 'hidden'; draw(); };
@@ -182,7 +130,7 @@ export function initCameraTab(ctx) {
     try { await navigator.clipboard.writeText(j); ctx.toast('Camera parameters copied'); } catch { console.log(j); }
   };
 
-  // ---- grabbing the current frame (works for a still image and for the MJPEG video alike)
+  // ---- grabbing the current reference frame
   const grabCanvas = document.createElement('canvas');
   function grabFrame() {
     const w = photo.naturalWidth, h = photo.naturalHeight;
@@ -355,16 +303,13 @@ export function initCameraTab(ctx) {
   }
   function update() { dirty = true; draw(); render(); }
 
-  // The first time the tab opens: a live snapshot when a real camera is connected (one read, only
-  // now), otherwise the saved frame. Nothing is loaded before the tab is opened.
+  // Load the repository reference only when the tab is opened.
   let activated = false;
-  async function activate() {
+  function activate() {
     if (activated) return;
     activated = true;
-    let camera = null;
-    try { camera = (await (await fetch('/local/info', { cache: 'no-store' })).json()).camera; } catch { /* static server */ }
-    $('cam-source').value = camera && camera !== 'mock' ? 'live' : 'saved';
+    $('cam-source').value = 'saved';
     loadSource();
   }
-  return { update, render, markDirty: () => { dirty = true; }, get calibration() { return cal; }, addTracker, grabFrame, stopVideo, activate };
+  return { update, render, markDirty: () => { dirty = true; }, get calibration() { return cal; }, addTracker, grabFrame, activate };
 }

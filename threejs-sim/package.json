@@ -5,7 +5,6 @@
   "scripts": {
     "start": "node server.mjs",
     "mock": "node server.mjs --mock",
-    "lab": "node server.mjs --mock --camera http://10.102.4.103:8765",
     "test": "node --test test/*.test.mjs"
   }
 }

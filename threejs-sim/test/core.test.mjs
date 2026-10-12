@@ -1,11 +1,11 @@
 // node --test web/test/
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SERVOS, CUBE } from '../js/config.js';
+import { SERVOS, BASE, CUBE, GRIPPER } from '../js/config.js';
 import { ikTopDown, fk, toolYawAndTilt, anglesFromCounts, countsFromAngles, gapForTheta, gripperTheta,
          padDepthForTheta, countsForGap, maxReach } from '../js/kinematics.js';
 import { segSegDist, boxBoxSep, segBoxDist, armShapes, findContacts } from '../js/collision.js';
-import { rotZ } from '../js/kinematics.js';
+import { rotZ, point } from '../js/kinematics.js';
 import { SimController, ControllerError } from '../js/controller.js';
 import { World } from '../js/world.js';
 import { planTransfer, verify, parseCommand, toMoves } from '../js/planner.js';
@@ -13,6 +13,7 @@ import { BOARD } from '../js/config.js';
 
 const near = (a, b, tol, msg) => assert.ok(Math.abs(a - b) <= tol, `${msg ?? ''} ${a} vs ${b}`);
 const HOME = SERVOS.map(s => s.home);
+const PARK = SERVOS.map(s => s.park);
 
 test('IK matches the table in docs/pick-and-place-plan.md section 8', () => {
   const rows = [[5, 15, 0, 18.4, 17.9, 74.7, 87.4], [5, 15, 5, 18.4, 23.3, 44.4, 112.3], [-8, 12, 0, -33.7, 10.2, 84.0, 85.9],
@@ -46,14 +47,10 @@ test('gripper linkage reproduces the measured values', () => {
   assert.ok(contact > 490 && contact < 590, `contact at ${contact}`);
 });
 
-test('default calibration fits the taught demo', () => {
-  // "Single approach, open": cube centre near the mat, gripper pointing down.
-  const f = fk(anglesFromCounts([440, 347, 360, 185, 340, 490]));
-  near(f.grasp[2], CUBE / 2, 0.5, 'grasp height');
-  assert.ok(f.grasp[0] < -5, 'S1 440 turns to the arm\'s left (camera +Y)');
-  assert.ok(toolYawAndTilt(f.hand).tilt < 10);
+test('default calibration preserves the HOME anchor and round-trips counts', () => {
   // counts -> angles -> counts round trip
   const a = anglesFromCounts(HOME);
+  assert.deepEqual(a, { s1: 0, s2: 6, s3: 62, s4: 84, s5: 90 });
   assert.deepEqual(countsFromAngles(a, HOME[5]), HOME);
 });
 
@@ -75,6 +72,39 @@ test('HOME is free of contacts; driving the wrist into the board is caught', () 
   const f = fk(ikTopDown(0, 15, -1.5));   // cube centre 1,5 cm below the board
   const c = findContacts(armShapes(f, 4.5), [], BOARD);
   assert.ok(c.some(k => k.b === 'board'));
+});
+
+test('PARK rests the closed claw on the raised upper base plate', () => {
+  const w = new World();
+  w.step(0, PARK);
+  assert.deepEqual(w.contacts, []);
+  const a = anglesFromCounts(PARK), f = fk(a);
+  const gap = gapForTheta(gripperTheta(PARK[5]));
+  const padDepth = padDepthForTheta(gripperTheta(PARK[5]));
+  // The metal finger extends 0,1 cm below the rubber pad in the detailed claw model.
+  const tip = point(f.hand, [-gap / 2, 0, padDepth + 0.7]);
+  near(tip[2], BASE.h, 0.01, 'claw tip must meet the raised plate top');
+  assert.ok(Math.abs(tip[0]) <= BASE.w / 2, 'claw tip must lie across the upper plate');
+  const frontY = BASE.offsetY + BASE.beamY;
+  assert.ok(Math.abs(tip[1] - frontY) <= BASE.beamD / 2, 'claw tip must lie on the front upper plate');
+});
+
+test('HOME to PARK and PARK to HOME transitions have no blocking contacts', () => {
+  const check = (from, name, target) => {
+    const ctl = new SimController(), w = new World();
+    ctl.setCommands(from);
+    w.step(0, ctl.position);
+    ctl.go_pose(name);
+    for (let i = 0; i < 5000 && ctl.busy; i++) {
+      ctl.update(1 / 120);
+      w.step(1 / 120, ctl.position);
+      assert.deepEqual(w.contacts, [], `${name} blocked at ${ctl.position.map(v => v.toFixed(1)).join(', ')}`);
+    }
+    assert.equal(ctl.busy, false, `${name} transition did not finish`);
+    assert.deepEqual(ctl.commands, target);
+  };
+  check(HOME, 'PARK', PARK);
+  check(PARK, 'HOME', HOME);
 });
 
 test('controller emulation: rejection, smoothstep timing, demo', () => {

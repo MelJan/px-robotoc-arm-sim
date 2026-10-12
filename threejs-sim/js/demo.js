@@ -16,7 +16,7 @@ function rot(axis, deg) {
 
 /**
  * ctx: { ctl, world, $, log, toast, renderCubes, showPath, setPathVisible(on), moveIsClear(from, to),
- *        liveControl(), resetView() }
+ *        resetView() }
  * Returns { run, stop, running }.
  */
 export function initDemo(ctx) {
@@ -87,11 +87,8 @@ export function initDemo(ctx) {
 
   async function run() {
     if (running) { abort = true; return; }
-    if (ctx.liveControl()) { ctx.toast('The demo runs in the simulation only; switch off live control first'); return; }
     running = true; abort = false;
     $('demo-btn').textContent = '■ Stop demo';
-    const ghostWas = $('show-ghost').checked;
-    $('show-ghost').checked = false;                     // the idle controller arm's ghost would distract
     try {
       ctl.rearm(); ctl.setCommands(ctl.poses.HOME.slice());
       world.cubes = []; world.holding = null;
@@ -103,7 +100,6 @@ export function initDemo(ctx) {
       if (await buildTower() && !abort) await finale();
     } catch (e) { log(`demo: ${e.message}`, 'err'); ctx.toast(e.message); }
     ctx.setPathVisible($('show-path').checked);
-    $('show-ghost').checked = ghostWas;
     running = false; abort = false;
     $('demo-btn').textContent = '▶ Demo: build a tower';
   }

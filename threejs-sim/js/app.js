@@ -1,15 +1,14 @@
-// Page glue: rendering, joint control, tasks, scene editing, live link, calibration.
+// Page glue: rendering, simulated joint control, tasks, scene editing and calibration.
 
 import * as THREE from 'three';
 import { createView } from './render.js';
 import { SERVOS, MAT, CAMERA, CUBE, COLOURS, PLAN } from './config.js';
 import { fk, anglesFromCounts, countsFromAngles, ikTopDown, guardViolations, camToBoard, toolYawAndTilt, Unreachable } from './kinematics.js';
 import { armShapes } from './collision.js';
-import { SimController, ControllerError } from './controller.js';
+import { SimController } from './controller.js';
 import { World } from './world.js';
 import { cubeTilt } from './physics.js';
 import { planTransfer, verify, toMoves, parseCommand, PlanError } from './planner.js';
-import { LiveLink } from './live.js';
 import { makeMaterials, buildArm, buildTable, buildCamera, buildCube } from './model/index.js';
 import { initCameraTab, defaultCalibration, applyPinhole, tableToBoard } from './camview.js';
 import { initDemo } from './demo.js';
@@ -39,19 +38,12 @@ function resetScene() {
 }
 resetScene();
 
-// The team's hand-taught pick and place (docs/controller-live-2026-10-12.md).
-const TAUGHT = { name: 'step1-hacks-10-direct-approach', positions: [
-  ['HOME start', [320, 427, 403, 220, 250, 550]], ['Above orange, open', [440, 427, 360, 185, 340, 490]],
-  ['Single approach, open', [440, 347, 360, 185, 340, 490]], ['Close gripper', [440, 347, 360, 185, 340, 590]],
-  ['Lift cube', [440, 427, 360, 185, 340, 590]], ['Transfer', [230, 427, 360, 185, 340, 590]],
-  ['Lower to destination', [235, 347, 360, 185, 380, 590]], ['Release cube', [235, 347, 360, 185, 380, 490]],
-  ['Withdraw', [235, 407, 360, 185, 380, 490]], ['HOME finish', [320, 427, 403, 220, 250, 550]]].map(([name, counts]) => ({ name, counts })) };
-
 // ---------------- renderer ----------------
 
 const canvas = $('canvas');
 const view = createView(canvas);
 const { renderer, scene, camera, controls } = view;
+let needsRender = true;
 camera.position.set(-30, 50, 30);
 controls.target.set(0, 11, 7);
 controls.update();
@@ -60,13 +52,6 @@ const M = makeMaterials();
 const table = buildTable(M); scene.add(table);
 const backdrop = table.getObjectByName('backdrop');
 const arm = buildArm(M); scene.add(arm.root);
-
-// ghost of the real arm (live mirror)
-const ghostMat = new THREE.MeshStandardMaterial({ color: 0x18a38f, transparent: true, opacity: 0.16, depthWrite: false });
-const ghost = buildArm(new Proxy({}, { get: () => ghostMat }));
-ghost.root.traverse(o => { o.castShadow = false; o.receiveShadow = false; });
-for (const c of ghost.root.children) if (c.isMesh) c.visible = false;   // the base never moves; draw only the moving links
-ghost.root.visible = false; scene.add(ghost.root);
 
 // The OAK camera: fitted to the mat markers (camview.js); the fit is kept per browser.
 const CAM_KEY = 'pxsim.camera.v1';
@@ -241,6 +226,7 @@ function toast(text, ms = 4000) {
 ctl.on((kind, detail) => {
   if (kind === 'stop') log(`STOP: ${detail}`, 'err');
   else if (kind === 'power') log(`power ${detail}`);
+  needsRender = true;
 });
 
 // ---------------- joints panel ----------------
@@ -277,9 +263,6 @@ function updateJointPanel(counts) {
   });
 }
 
-/** True when the joint panel and pose buttons drive the real arm. */
-const liveControl = () => link && link.state && $('live-enable').checked;
-
 /** Sim check of one joint move before sending it anywhere: does the swept path hit something? */
 function moveIsClear(from, to) {
   const snap = world.snapshot();
@@ -295,27 +278,14 @@ function moveIsClear(from, to) {
 
 async function command(kind, ch, value) {
   try {
-    if (liveControl()) {
-      const cur = LiveLink.counts(link.state);
-      const target = kind === 'jog' ? cur[ch] + value * ctl.settings.step_size : value;
-      const to = cur.slice(); to[ch] = target;
-      const hit = moveIsClear(cur, to);
-      if (hit) throw new Error(`sim predicts a collision: ${hit.a} × ${hit.b} — not sent`);
-      await link.move(ch, target);
-      log(`arm: ${SERVOS[ch].name} → ${target}`, 'warn');
-    } else if (kind === 'jog') ctl.jog(ch, value);
+    if (kind === 'jog') ctl.jog(ch, value);
     else ctl.move(ch, value);
   } catch (e) { toast(e.message); log(e.message, 'err'); }
 }
 
 const poseCmd = name => async () => {
   try {
-    if (liveControl()) {
-      const cur = LiveLink.counts(link.state), to = link.state.joints.map(j => j[name.toLowerCase()]);
-      const hit = moveIsClear(cur, to);
-      if (hit) throw new Error(`sim predicts a collision on the way to ${name}: ${hit.a} × ${hit.b} — not sent`);
-      await link.goPose(name); log(`arm: go ${name}`, 'warn');
-    } else ctl.go_pose(name);
+    ctl.go_pose(name);
   } catch (e) { toast(e.message); log(e.message, 'err'); }
 };
 $('go-home').onclick = poseCmd('HOME');
@@ -324,14 +294,13 @@ $('power-on').onclick = () => { ctl.rearm(); lastContacts = new Set(world.contac
 $('estop').onclick = async () => {
   demo.stop();
   ctl.stop('emergency stop button');
-  if (link) { try { await link.emergencyStop(); log('arm: STOP sent', 'err'); } catch (e) { log(`arm stop failed: ${e.message}`, 'err'); } }
 };
 
 // ---------------- task panel ----------------
 
 let current = null; // { plan, report, moves, start, mode }
 
-const startCounts = () => (liveControl() ? LiveLink.counts(link.state) : ctl.commands.slice());
+const startCounts = () => ctl.commands.slice();
 
 function describe(report) {
   const parts = [];
@@ -355,8 +324,6 @@ function renderPlan() {
     <div class="steps"><table><tr><th>Step</th>${SERVOS.map(s => `<th>${s.name}</th>`).join('')}</tr>${rows}</table></div>`;
   $('run-sim').disabled = false;
   $('export-plan').disabled = false;
-  $('send-live').disabled = !(liveControl() && report.ok && mode === 'moves');
-  $('send-live').title = mode !== 'moves' ? 'Choose "Single-joint moves": the HTTP API moves one joint at a time' : 'Needs a live connection with control enabled';
 }
 
 function makePlan() {
@@ -376,7 +343,7 @@ function makePlan() {
   } catch (e) {
     current = null;
     $('plan-out').innerHTML = `<span class="bad">${e.message}</span>`;
-    $('run-sim').disabled = $('send-live').disabled = $('export-plan').disabled = true;
+    $('run-sim').disabled = $('export-plan').disabled = true;
     if (!(e instanceof PlanError)) console.error(e);
   }
 }
@@ -401,20 +368,6 @@ $('export-plan').onclick = async () => {
   try { await navigator.clipboard.writeText(json); toast('Plan copied as demo JSON'); } catch { console.log(json); toast('Clipboard blocked; JSON printed to the console'); }
 };
 
-$('send-live').onclick = async () => {
-  if (!current || !liveControl()) return;
-  // Re-plan from the arm's real commanded pose right before sending.
-  $('exec-mode').value = 'moves'; makePlan();
-  if (!current?.report.ok) { toast('The plan does not pass the simulation check; nothing sent'); return; }
-  if (!confirm(`Send ${current.moves.length} single-joint moves to the real arm at ${link.base || location.host}?\nStay at the emergency stop.`)) return;
-  $('live-follow').checked = true;
-  log(`arm: sending ${current.moves.length} moves`, 'warn');
-  try {
-    await link.runMoves(current.moves, { onStep: (i, m) => { $('hud').textContent = `arm: ${i + 1}/${current.moves.length} ${m.label}`; } });
-    log('arm: plan finished', 'ok');
-  } catch (e) { log(`arm: ${e.message}`, 'err'); toast(e.message); }
-};
-
 $('goto-xyz').onclick = () => {
   try {
     const s5 = anglesFromCounts(ctl.commands).s5;
@@ -425,16 +378,10 @@ $('goto-xyz').onclick = () => {
   } catch (e) { toast(e instanceof Unreachable ? `Unreachable: ${e.message}` : e.message); }
 };
 
-// the team's hand-taught demo (Tools)
-$('taught-demo').onclick = () => {
-  try { ctl.demo_load(TAUGHT.name, TAUGHT.positions); ctl.settings.demo_speed = Number($('demo-speed').value) || 40; ctl.demo_run(); showPath(TAUGHT.positions, ctl.commands.slice()); }
-  catch (e) { toast(e.message); }
-};
-
 // ---------------- demonstration (demo.js) ----------------
 
 const demo = initDemo({
-  ctl, world, $, log, toast, renderCubes, showPath, moveIsClear, liveControl,
+  ctl, world, $, log, toast, renderCubes, showPath, moveIsClear,
   setPathVisible: on => { pathLine.visible = pathDots.visible = on; needsRender = true; },
   resetView: () => { leaveOakView(); camera.position.set(-34, 44, 30); controls.target.set(0, 11, 6); controls.update(); },
 });
@@ -481,62 +428,6 @@ canvas.addEventListener('pointerup', e => {
   placing = null; renderCubes();
 });
 
-// ---------------- live link ----------------
-
-let link = null;
-$('live-connect').onclick = () => {
-  if (link) { link.stopPolling(); link = null; ghost.root.visible = false; $('live-connect').textContent = 'Connect'; $('live-status').textContent = 'not connected'; updateLiveUi(); return; }
-  link = new LiveLink($('live-url').value.trim());
-  link.on((state, err) => {
-    $('live-status').textContent = err ? `error: ${err}` : `${state.mode}, ${state.outputs_off ? 'outputs off' : state.armed ? 'armed' : 'not armed'}${state.busy ? ', moving' : ''}`;
-    if (state && !err) {
-      const c = LiveLink.counts(state);
-      liveCounts = c;
-      if ($('live-follow').checked && !ctl.busy) ctl.setCommands(c);
-      if (state.joints) state.joints.forEach((j, i) => { ctl.poses.HOME[i] = j.home; ctl.poses.PARK[i] = j.park; });
-    }
-    updateLiveUi(); needsRender = true;
-  });
-  link.start(backend.backend === 'mock' ? 300 : 1500);   // the real controller is shared: poll gently
-  $('live-connect').textContent = 'Disconnect';
-};
-let liveCounts = null;
-function updateLiveUi() {
-  const on = !!(link && link.state);
-  $('live-demo').disabled = !on;
-  for (const id of ['live-home', 'live-park']) $(id).disabled = !liveControl();
-  $('mode-badge').textContent = liveControl() ? 'live control' : on ? 'sim + live view' : 'simulation';
-  $('mode-badge').classList.toggle('live', !!liveControl());
-  if (current) $('send-live').disabled = !(liveControl() && current.report.ok && current.mode === 'moves');
-}
-$('live-enable').onchange = updateLiveUi;
-$('show-ghost').onchange = () => { updateLiveUi(); needsRender = true; };
-$('live-home').onclick = poseCmd('HOME');
-$('live-park').onclick = poseCmd('PARK');
-$('live-demo').onclick = () => {
-  const d = link.state.demo;
-  try {
-    ctl.demo_load(d.name, d.positions.map(p => ({ name: p.name, counts: LiveLink.counts(p) })));
-    ctl.settings.demo_speed = link.state.settings?.demo_speed || 20; ctl.demo_run();
-    log(`playing the controller's demo "${d.name}" in the sim`);
-  } catch (e) { toast(e.message); }
-};
-// Who serves this page: server.mjs with the mock (connect automatically), server.mjs as a proxy to the
-// real controller (read only unless started with --allow-motion; connect only when asked), or the
-// controller itself (/local/info missing: read state only after Connect).
-let backend = { backend: 'none', allowMotion: false };
-fetch('/local/info', { cache: 'no-store' }).then(r => (r.ok ? r.json() : { backend: 'controller', allowMotion: true })).catch(() => backend).then(info => {
-  backend = info;
-  // The consent box starts locked in the HTML and opens only when the server allows motion.
-  if (info.allowMotion) $('live-enable').disabled = false;
-  else {
-    $('live-enable').checked = false; $('live-enable').disabled = true;
-    $('live-enable').parentElement.title = 'Read only: the page server forwards GET requests only';
-    $('live-status').textContent = 'read only';
-  }
-  if (info.backend === 'mock') $('live-connect').click();
-});
-
 // ---------------- calibration panel ----------------
 
 function renderCal() {
@@ -563,7 +454,6 @@ document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
 });
 const camTab = initCameraTab({
   scene, initial: CAMERA.calib, hideForCamera, log, toast,
-  linkBase: () => (link ? link.base : ''),
   onApply: cal => {
     CAMERA.calib = cal;
     try { localStorage.setItem(CAM_KEY, JSON.stringify({ R: cal.R, t: cal.t, f: cal.f, cx: cal.cx, cy: cal.cy, centre: cal.centre, rms: cal.rms, H: cal.H })); } catch { /* not saved */ }
@@ -605,7 +495,7 @@ const camTab = initCameraTab({
 
 // ---------------- main loop ----------------
 
-let needsRender = true, last = performance.now(), lastContacts = new Set(), eventIdx = 0, lastCubeKey = '';
+let last = performance.now(), lastContacts = new Set(), eventIdx = 0, lastCubeKey = '';
 controls.addEventListener('change', () => { needsRender = true; });
 $('show-shapes').onchange = () => { needsRender = true; };
 $('show-path').onchange = () => { pathLine.visible = pathDots.visible = $('show-path').checked; needsRender = true; };
@@ -640,10 +530,6 @@ function frame(now) {
   if (needsRender) {
     const a = anglesFromCounts(ctl.position);
     arm.setPose(a, world.gap);
-    // The ghost shows the real arm only where it differs from the simulated one.
-    const showGhost = !!(link && link.state && liveCounts && $('show-ghost').checked && liveCounts.some((c, i) => Math.abs(c - ctl.position[i]) > 2));
-    ghost.root.visible = showGhost;
-    if (showGhost) ghost.setPose(anglesFromCounts(liveCounts), world.gap);
     syncCubeMeshes();
     const hitNames = new Set(world.contacts.flatMap(k => [k.a, k.b]));
     updateShapes(armShapes(world.frames, world.gap), hitNames, $('show-shapes').checked);
@@ -671,4 +557,4 @@ resize();
 requestAnimationFrame(frame);
 
 // for the console and for tests
-window.sim = { ctl, world, scene, camera, controls, renderer, view, arm, camTab, get link() { return link; }, makePlan, THREE };
+window.sim = { ctl, world, scene, camera, controls, renderer, view, arm, camTab, makePlan, THREE };

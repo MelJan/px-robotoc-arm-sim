@@ -17,6 +17,13 @@ export const ARM = {
 
 export const BOARD = { w: 30, d: 38, t: 1.0, axisToBackEdge: 1.5 };
 
+// Two 90 x 42 x 25 mm U-beams form the raised base fixture. Each beam has a
+// lower and upper horizontal plate with an open cavity between them.
+export const BASE = {
+  w: 9.0, beamD: 4.0, h: 2.5, plateT: 0.2,
+  offsetY: 2.2, beamY: 2.12, webY: 0.13, webT: 0.2,
+};
+
 export const CUBE = 2.65;
 
 // Gripper parallel linkage, gripper-local u (sideways) and v (down from the flange), cm.
@@ -37,17 +44,16 @@ export const GRIPPER = {
 // positive S2..S4 tilt toward +Y, positive S1 turns +Y toward +X) at the HOME count.
 // dir: +1 if increasing counts increases the model angle.
 //
-// q_home and dir are NOT measured (HANDOVER.md, open item 1). The defaults below were
-// fitted to the team's taught demo "step1-hacks-10-direct-approach": with them the
-// "Single approach" pose puts the cube centre at 1,3 cm height, 19 cm out, gripper
-// pointing down, and PARK rests the gripper on the board. The fitted directions
-// match the controller's historical sign table (S2 -1, S3 +1, S4 -1).
+// q_home, dir and cpd are NOT fully measured (HANDOVER.md, open item 1). HOME retains
+// the photo-fitted angles. S2-S4 counts/degree are additionally anchored to the observed
+// PARK pose, where the closed claw rests on the upper plate of the 2,5 cm raised fixture.
+// The directions match the controller's historical sign table (S2 -1, S3 +1, S4 -1).
 // Change them in the Calibration panel once they are measured.
 export const SERVOS = [
   { ch: 0, name: 'S1', joint: 'Base rotation',  home: 320, park: 330, low: 90,  high: 660, cpd: 260 / 85, qHome: 0,  dir: -1 },
-  { ch: 1, name: 'S2', joint: 'Shoulder',       home: 427, park: 540, low: 185, high: 660, cpd: 220 / 90, qHome: 6,  dir: -1 },
-  { ch: 2, name: 'S3', joint: 'Elbow',          home: 403, park: 580, low: 90,  high: 660, cpd: 240 / 90, qHome: 62, dir: +1 },
-  { ch: 3, name: 'S4', joint: 'Wrist flexion',  home: 220, park: 195, low: 90,  high: 660, cpd: 250 / 90, qHome: 84, dir: -1 },
+  { ch: 1, name: 'S2', joint: 'Shoulder',       home: 427, park: 540, low: 185, high: 660, cpd: 2.512007, qHome: 6,  dir: -1 },
+  { ch: 2, name: 'S3', joint: 'Elbow',          home: 403, park: 580, low: 90,  high: 660, cpd: 3.525795, qHome: 62, dir: +1 },
+  { ch: 3, name: 'S4', joint: 'Wrist flexion',  home: 220, park: 195, low: 90,  high: 660, cpd: 1.097333, qHome: 84, dir: -1 },
   // The live controller's HOME has S5 = 250 (docs/controller-live-2026-10-12.md).
   // At 480 (the documented HOME) the jaws close along the arm's sideways axis.
   { ch: 4, name: 'S5', joint: 'Wrist rotation', home: 250, park: 480, low: 90,  high: 660, cpd: 230 / 90, qHome: 90, dir: -1 },

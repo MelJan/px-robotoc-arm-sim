@@ -1,161 +1,140 @@
-# three.js simulator: what it does, how, and what comes next
+# PX Three.js simulator architecture
 
-The recommendation in `HANDOVER.md` section 5 was to drop Unreal for a small web tool.
-That tool now exists in `threejs-sim/`. It uses three.js for drawing and our own code for everything else; the Unreal project and the MuJoCo scripts were removed.
-How to run it is in `threejs-sim/README.md`.
-This document explains the parts, the decisions behind them, and the next steps, including how it gets into the controller's web page.
+`threejs-sim/` is the unified browser implementation of the PX robotic-arm digital twin. It keeps the richer kinematics, collision, physics, planning, camera, and detailed model from `feature/threejs-sim`, while presenting them through a polished dark responsive interface named **PX-robo-arm-simulator**.
 
-![Simulator](images/threejs-sim.png)
+The application is deliberately simulation-only. Controller terminology and count-based controls mirror the team’s existing robot UI for familiarity, but no module connects to or commands the physical arm.
 
-## 1. Principles
+## 1. Design principles
 
-- **The schematic is canon.** All joint distances come from `docs/images/arm-dimensions.png` via `threejs-sim/js/config.js`. The rendered model was measured in the browser and matches (section 3).
-- **The sim behaves like the controller.** Same units, guards, rejection rules and trajectory shape as `lutich/robot-arm`, so a plan that runs in the sim is a plan the controller accepts.
-- **Nothing reaches the real arm by accident.** Read only by default, motion only through the controller's own API, after a sim check, with explicit operator consent (section 8).
-- **No heavy toolchain.** Plain ES modules and a vendored three.js. Node is only used for the dev server and the tests; Python only for the existing optional `vision/` scripts.
+- **Preserve the measured geometry.** The dimensions in `docs/images/arm-dimensions.png` and the supplied reference photos determine the visible link proportions.
+- **Preserve provenance.** Photo estimates, fitted calibration, historical bounds, observed poses, and measured dimensions must remain distinct.
+- **Model controller semantics, not controller connectivity.** Counts, guards, HOME/PARK, jog, smoothstep motion, stop, and re-arm are simulated locally.
+- **Check motion before playback.** Plans are replayed in a headless copy of the world and reported as passing or failing before the visible simulation runs them.
+- **Stay offline.** Plain ES modules and vendored Three.js need only a local static server. There is no controller proxy or live-camera transport.
 
-## 2. Architecture
+## 2. Runtime architecture
 
-```
-            browser (threejs-sim/index.html)
- ┌──────────────────────────────────────────────────────────────┐
- │ app.js  UI, main loop                                        │
- │  ├ controller.js  emulated controller (counts, smoothstep)   │
- │  ├ world.js       arm pose, grasp rules, physics stepping    │
- │  │   ├ kinematics.js  FK / IK / counts <-> angles            │
- │  │   ├ collision.js   arm shapes, self/board contacts        │
- │  │   └ physics.js     cube rigid bodies                      │
- │  ├ planner.js     tasks -> poses -> verified plan            │
- │  ├ camview.js     Camera tab: calib.js, detect.js            │
- │  ├ live.js        HTTP client of the controller API          │
- │  └ model.js / render.js   three.js scene                     │
- └───────────────▲──────────────────────────────────────────────┘
-                 │ same origin
-   server.mjs: static files + mock controller  |  read-only proxy to the Pi
-               or the controller itself, with the patch in integration/
+```text
+browser (threejs-sim/index.html)
+├── app.js             UI, scene editing, render/physics loop
+├── controller.js      local count-based controller model
+├── world.js           arm pose, grasping, contacts, physics state
+│   ├── kinematics.js  FK, IK, count/angle conversion
+│   ├── collision.js   arm primitives and collision tests
+│   └── physics.js     cube rigid bodies
+├── planner.js         task parsing, motion planning, verification
+├── camview.js         simulated view and local reference images
+│   ├── calib.js       marker-based camera fit
+│   ├── aruco.js       browser marker detection
+│   └── detect.js      coloured-cube recognition
+├── model/             detailed modular Three.js geometry
+└── render.js          Z-up camera, lighting, shadows, controls
+
+server.mjs             local static server; optional in-process mock API
 ```
 
-## 3. Model and dimensions
+`server.mjs` explicitly rejects `--controller`, `--camera`, and `--allow-motion`. The deleted `js/live.js` path is no longer part of the unified application.
 
-| Check on the rendered model | Schematic | Measured in the browser |
-|-----------------------------|-----------|-------------------------|
-| Board top to S2 | 9,6 | 9,6 |
-| S2 to S3 | 10,5 | 10,5 |
-| S3 to S4 | 12,6 | 12,6 |
-| S4 to flange | 6,7 | 6,7 |
-| Flange height, arm straight up | 39,4 | 39,4 |
-| Pad gap open / closed | 4,5 / 0 | 4,5 / 0 |
-| Flange to pads, open / closed | 10,0 / 11,5 | 10,0 / 11,5 |
+## 3. Coordinate system and dimensions
 
-Kit drawings found on the web confirm the brackets (`docs/images/web/SOURCES.md`):
+The model uses centimetres and a Z-up world. X runs across the board, Y runs from the rear toward the work area, and Z is height above the board/mat frame.
 
-- **Upper arm:** two long U brackets bolted base to base give 2 × 50 + 2 × 2 = 104 mm horn to horn. That matches the measured 10,5.
-- **Base:** two "U beams" of 90 × 42 × 25 mm form the 9 × 8,4 plate.
-- **Horns:** Ø20, with 4 × M3 holes on a Ø14 circle.
+| Model check | Current value |
+|---|---:|
+| Board top to S2 | 9.6 cm |
+| S2 to S3 | 10.5 cm |
+| S3 to S4 | 12.6 cm |
+| S4 to flange | 6.7 cm |
+| Flange height, straight up | 39.4 cm |
+| Pad gap, open / closed | 4.5 / 0 cm |
+| Flange to pads, open / closed | 10.0 / 11.5 cm |
 
-From the photos (`docs/images/photos/`):
+The detailed visual model includes servo cases, horns, paired metal brackets, fasteners, cable routing, base plates, mounting board/mat, camera, and the linkage-style claw. These details improve silhouette and clearance judgement, but collision geometry remains a deliberately simpler set of capsules and boxes.
 
-- The S1 servo stands at the back of the base plate, which reaches forward over the mat.
-- S3 rides on the forearm, and the upper arm is screwed to its horn.
-- The PCA9685 sits on pink foam on the upper arm.
-- The servo cables are routed per link and follow the pose.
+The S1-to-mat offset is a photo estimate rather than a direct measurement. It must not be presented as validated.
 
-**Mat offset.** The overhead photo `setup-top-view-base.jpg` shows the board's back edge at about mat X = 10 mm. With S1 1,5 cm in front of that edge, d = −2,5 cm. The mat paper overhangs the board there and folds down. This is a photo estimate, not a measurement (open item 3).
+## 4. Simulated controller behaviour
 
-## 4. Controller emulation
+`controller.js` reproduces the useful behaviour of the team controller locally:
 
-`controller.js` copies `control/domain/motion.py` and `docs/api.md`:
+- servo targets are PCA9685 counts at a nominal 60 Hz;
+- targets outside configured guards are rejected rather than clamped;
+- only one simulated motion runs at once;
+- motion uses a shared cubic smoothstep trajectory;
+- HOME, PARK, jog, coordinated playback, stop, and re-arm are available;
+- the red emergency button stops the simulation only.
 
-- **Motion:** one motion at a time. All joints share one cubic smoothstep, whose duration is 1,5 × the largest Δ / speed. Moves, jogs and HOME/PARK run at 20 counts/s; demo playback at 1 to 100.
-- **Limits:** targets outside the guards are rejected, never clamped.
-- **Stop:** switches the outputs off.
-- **Same object, three uses:** the page runs it, `server.mjs --mock` serves it over the same HTTP API, and the planner verifies plans with it headless.
+The UI has two playback styles. Coordinated demo playback moves joints together. Controller-style preview decomposes a pose into one-joint moves and chooses a collision-clear order. Neither mode issues HTTP requests to a robot.
 
-The HTTP API moves one joint at a time (`move`), so the sim has two playback modes:
+## 5. Collision, physics, and grasping
 
-- **Demo playback:** all joints together, like the controller's own "Run all once".
-- **Single-joint moves:** the only way to reach a computed pose over the API. For each step, the planner tries joint orders and keeps the first one whose intermediate poses stay clear of everything.
+Arm parts use capsules and oriented boxes for self, board, and cube collision. Adjacent links are excluded where appropriate. New self/board contacts can stop simulated motion when “Stop on collision” is selected.
 
-## 5. Collision and physics
+The mounting fixture is represented by compound collision shapes: lower and upper plates plus front and rear vertical supports. This preserves the real open cavity between the plates instead of treating the entire fixture envelope as a solid obstruction. With the current provisional, photo-aligned calibration, the longest claw finger reaches the 2.5 cm upper-plate height at PARK without penetrating it. No PARK-specific collision exception is used.
 
-**Arm collision.** Every arm part is a capsule or a box sized from the photos. Self collision is tested between links that are not neighbours; arm parts are also tested against the board. Both can stop the motion like an emergency stop.
+Cube dynamics are implemented locally with SAT/face-clipped contacts, sequential impulses, friction, gravity, rotational state, and sleeping. The kinematic arm contributes surface velocity, so it can push or topple cubes.
 
-**Cubes are rigid bodies** (`physics.js`, about 400 lines, no library):
+Grasping is intentionally rule-based. When the closing pads envelop a suitably placed cube, the cube is aligned, centred, and attached. Opening releases it with the hand velocity. This gives stable manipulation without claiming a high-fidelity friction model.
 
-- **Contacts:** a separating axis test, then face clipping for box-box contact manifolds (up to 4 points), vertex tests for the board and desk planes, and closest points for capsule-box.
-- **Solver:** sequential impulses with accumulated clamping, Coulomb friction in two tangent directions, speculative contacts, Baumgarte correction, and 240 Hz substeps.
-- **Arm as a collider:** the arm is kinematic. Its surface velocity comes from its motion between substeps, so it can push and topple cubes.
-- **Sleeping:** bodies that stay still go to sleep, so stacks stand quietly.
-- **Tested:** a 3-stack stays put, a tumbling drop lands flat, a 75 % overhang topples, and the arm sweeping through a cube pushes it.
+## 6. Planning and verification
 
-Grasping is rule based on purpose: two-finger friction grasps are not stable in a small solver. When the closing jaws reach a cube between the pads, they square it up (up to 20° off), centre it, and hold it rigidly. On release it becomes a dynamic body with the hand's velocity. The log reports the S6 count where the jaws touch the cube (≈ 567); higher counts squeeze it.
+Natural task phrases such as `blue on orange`, `grün auf blau`, and `yellow to 0 14` become a sequence of count targets:
 
-## 6. Planning
+1. Solve a top-down IK target with the gripper oriented for the cube.
+2. Add vertical approach, closure, lift, transit, lower, release, and withdrawal poses.
+3. Insert raised via poses when a direct joint-space transit intersects a stack.
+4. Run the plan in a copied world with physics.
+5. Report contacts, duration, grasp events, and final placement error.
 
-`planner.js` turns "blue on orange", "grün auf blau" or "yellow to 0 14" into servo counts:
+This planner is intended to avoid obviously impossible or colliding simulated paths. Because calibration and envelopes are not fully measured, it is not a certified motion-safety system.
 
-1. Top-down IK (`docs/pick-and-place-plan.md` section 3), with S5 chosen so the jaws are square to the cube and inside the S5 guards.
-2. The sequence of plan section 4, with vertical descent and lift in 1 cm steps (0,25 cm for single-joint moves). The hover is 5 cm on the mat and 2 cm above stacks, and drops if out of reach.
-3. Where a joint-space transit would hit a stack, one or two raised via poses are inserted.
-4. The whole plan runs headless in a copy of the world, with physics. It passes only if there is no contact and the cube ends within 0,9 cm of the target, flat.
+## 7. Camera and reference images
 
-## 7. Camera: simulation, calibration, recognition
+The camera tab renders the scene through the OAK camera’s fitted pinhole model. A repository image or user-selected local image can be overlaid for comparison.
 
-- **Simulated view:** the OAK camera is rendered with its exact pinhole model (focal length and principal point as a custom projection matrix) and its fitted pose, with the real frame overlaid.
-- **Calibration** (`calib.js`), from the mat markers:
-  1. Normalised DLT homography.
-  2. Focal length from the homography's orthogonality constraints.
-  3. Pose from its columns.
-  4. Levenberg-Marquardt over pose, focal length and principal point.
+Calibration uses known mat-marker corners:
 
-  On the saved frame it reproduces OpenCV's fit from `vision/blocks.py`: f = 950 px, principal point (655, 360), camera at (481, −8, 372) mm, 0,88 px RMS. For a new frame, clicking the 6 marker centres is enough. The result moves the camera in the 3D model.
-- **Cube recognition** (`detect.js`):
-  1. Classify pixels by HSV colour, keeping only those whose viewing ray hits the mat.
-  2. Find connected components.
-  3. Back-project each blob to half cube height. Its mean is the cube's position, and its principal axis the yaw.
-  4. Check the size against a projected 26,5 mm cube.
+1. normalised DLT homography;
+2. focal length and initial pose from homography constraints;
+3. Levenberg–Marquardt refinement of pose, focal length, and principal point.
 
-  "Put them into the sim" places the cubes on the mat, and tasks can then go to them. It assumes cubes lie on the mat. In the saved frame the orange cube is actually held in the gripper, so detection reports it at the mat point below.
+Colour segmentation and back-projection detect cubes assumed to lie on the mat and can place those detections into the simulated scene. There is no live snapshot, MJPEG stream, camera proxy, or remote fetch in the unified build.
 
-**Live video and tracking.** The Camera tab can show the controller's MJPEG stream (`/api/camera/stream.mjpg`, read only).
-"Track continuously" runs every registered tracker on the current frame.
-The cube tracker can also move the sim's cubes to what the camera sees.
-On 2026-10-12 against the real camera it ran at the camera's 5 fps, about 17 ms per frame (`images/live/2026-10-12-1707-live-video-tracking.png`).
-The tracker hook (`addTracker`) is where the gripper ArUco tracker for the HOME-angle calibration goes.
+## 8. Interface
 
-**HOME check.** The controller's own HOME illustration (`images/controller-ui/home-illustration.png`) shows S2 at about 22°, S3 at about 70° and S4 at about 88° in the model's convention. The fit to the taught demo gave 6°, 62° and 84°.
-The illustration is not to scale (its link ratio is 0,94 against the real 0,83), so neither value is a measurement.
-A live check already agrees on S1: with S1 = 505 counts the sim arm and the real arm in the camera frame point the same way.
+The dark responsive UI keeps the controller’s familiar concepts without copying its hardware connection:
 
-## 8. Safety model
+- count sliders and numeric fields for S1–S6;
+- HOME, PARK, jog, stop, re-arm, and limit/calibration concepts;
+- planning, simulation playback, path and collision visualisation;
+- cube scene editing and physics demo;
+- simulated/reference camera tools;
+- resizable desktop sidebar and stacked tablet/mobile layout;
+- a persistent offline-twin badge and simulation-only notice.
 
-| Situation | What can happen |
-|-----------|-----------------|
-| `server.mjs --mock` | Everything, against the mock |
-| `server.mjs --controller <pi>` | Read only: state (one GET per 1,5 s after "Connect"), camera snapshots one at a time on request. All POSTs except `/api/stop` are refused by the server; the page disables control |
-| `server.mjs --controller <pi> --allow-motion`, or served by the controller | The operator must tick "I am at the emergency stop…". Every joint move and HOME/PARK is simulated first and refused if the sim predicts a collision. "Send to arm" re-plans from the arm's real counts, needs a passing sim check and a confirmation, and then uses single-joint `move` calls through the controller's own guards |
-| Emergency stop button | Always stops the sim, and sends `/api/stop` when connected |
+The displayed application and document title remain exactly `PX-robo-arm-simulator`.
 
-## 9. Integration into the controller's web page
+## 9. Validation
 
-**Goal:** open the simulator from the controller's own page at `http://<pi>:8765/`, view the real arm next to the sim, and later control it from there.
+Run from `threejs-sim/`:
 
-**Option A, no change on the Pi.** Run `server.mjs --controller http://<pi>:8765` on a laptop. The proxy sends the matching Origin, which is the only way a page served elsewhere can talk to the API. Read only unless `--allow-motion`.
+```sh
+npm test
+```
 
-**Option B, served by the controller.** `integration/robot-arm-sim-route.patch` (+34 lines in `lutich/robot-arm`):
+The 23 automated tests cover kinematics, controller emulation, collision, cube physics, planning, camera calibration, PARK alignment with the raised fixture plate, and direct HOME→PARK and PARK→HOME transitions. Browser changes additionally require a console check and manual exercise of the affected controls.
 
-- adds a read-only `/sim/` route that serves the `threejs-sim` folder when `ROBOT_ARM_SIM_DIR` is set;
-- adds a "3D simulator" button in the page header, shown only when the route exists.
+The transition tests establish only that the current digital twin encounters no modelled contacts and that the PARK claw endpoint aligns with the modelled upper plate. PARK remains an observed commissioning reference pose, not a physically validated safe transition.
 
-Same origin means no proxy, and the controller's own checks apply unchanged. The patch compiles and applies to commit `3792d64`. It has not been run on the Pi and is not applied to the controller repo, because that repo belongs to the team and needs their review (`integration/README.md`).
+## 10. Remaining measurement work
 
-**Later, Option C.** Embed the 3D view in the controller page itself (an `<iframe src="/sim/?embed=1">` next to the joint panel). The sim would follow `/api/state`, and a "Preview" button would show a demo's path before "Run all once".
+For dependable collision avoidance rather than dynamic realism, the highest-value physical data is:
 
-## 10. Next steps, in order
+1. calibrated HOME angle/direction and counts-per-degree for S1–S5;
+2. photographed/measured joint centres in several known count poses;
+3. maximum body envelopes for brackets, horns, servo cases, bolts, and cables;
+4. gripper pad position and envelope across several S6 counts;
+5. board, fixture, controller box, and cable obstacle locations in one common frame;
+6. repeatable PARK clearance measurements and confirmation that the observed path is collision-free.
 
-1. **Measure HOME angles and directions** (open item 1). Until then the sim uses angles fitted to the taught demo. With the gripper ArUco marker (`tracking-plan.md` section 4), the camera calibration here can measure them: command poses, detect the marker, fit q_home and dir per servo.
-2. **Measure d**, or fit it from an S1 sweep seen by the camera.
-3. **Agree on Option B with the team.** Then the simulator ships with the controller.
-4. **Teach plans as demos.** The controller can only record demos from the current pose (`demo/add`). A plan can be taught step by step (single-joint moves, then `demo/add` at each pose) and then replayed with all joints together at demo speed. That is much smoother than 200 single moves.
-5. **Detect stacked cubes in the browser** too, with the level logic of `vision/blocks.py`, and refresh the sim scene from the camera before each task.
-6. **Closed loop:** after each place, compare the camera's cube positions with the sim and correct the next plan.
+Until these are measured, the application should label fitted values as provisional and treat collision results as useful estimates rather than physical guarantees.
