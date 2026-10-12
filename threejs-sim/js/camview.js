@@ -103,6 +103,8 @@ export function initCameraTab(ctx) {
   const startVideo = async () => {
     await readStatus();
     setPhoto(`${ctx.linkBase()}/api/camera/stream.mjpg?t=${Date.now()}`);
+    // the video's load event is not reliable for MJPEG; calibrate from a frame shortly after it starts
+    if ($('cam-auto-on').checked) setTimeout(() => { if (source === 'video') autoCalibrate({ quiet: true, announce: true }); }, 1500);
     ctx.log(`camera: video stream opened (GET only, stops after ${VIDEO_LIMIT_MIN} min)`);
     clearTimeout(videoTimer);
     videoTimer = setTimeout(() => stopVideo(`${VIDEO_LIMIT_MIN} min limit`), VIDEO_LIMIT_MIN * 60000);
@@ -134,6 +136,11 @@ export function initCameraTab(ctx) {
   $('cam-refresh').onclick = refreshLive;
   $('cam-file').onchange = e => { const f = e.target.files[0]; if (f) setPhoto(URL.createObjectURL(f)); };
   photo.onerror = () => ctx.toast('No camera frame (live needs the page served by server.mjs --controller or --mock)');
+  // A new real frame (snapshot or image file): find the markers and refit the camera right away,
+  // so the overlay and the camera in the 3D model follow a camera that has been moved.
+  photo.onload = () => {
+    if (source !== 'saved' && source !== 'video' && $('cam-auto-on').checked) setTimeout(() => autoCalibrate({ quiet: true, announce: true }), 50);
+  };
   $('cam-opacity').oninput = () => { photo.style.opacity = $('cam-opacity').value / 100; };
   for (const id of ['cam-show-sim', 'cam-show-marks', 'cam-show-grid']) $(id).onchange = () => { simCanvas.style.visibility = $('cam-show-sim').checked ? 'visible' : 'hidden'; draw(); };
 
@@ -211,7 +218,7 @@ export function initCameraTab(ctx) {
 
   // ---- automatic calibration from the ArUco markers in the current frame
   let markerQuads = {};
-  function autoCalibrate({ quiet = false } = {}) {
+  function autoCalibrate({ quiet = false, announce = false } = {}) {
     const img = grabFrame();
     if (!img) { if (!quiet) ctx.toast('No readable frame'); return false; }
     const t0 = performance.now();
@@ -233,7 +240,7 @@ export function initCameraTab(ctx) {
       cal = next;
       ctx.onApply(cal);
       $('cam-pick-hint').textContent = `Markers found: ${ids.sort().join(', ')} in ${ms.toFixed(0)} ms. Camera fitted to ${points.length} corners, ${cal.rms.toFixed(2)} px rms.`;
-      if (!quiet) ctx.log(`camera calibrated from markers ${ids.join(', ')}: f ${cal.f.toFixed(0)} px, ${cal.rms.toFixed(2)} px rms`, 'ok');
+      if (!quiet || announce) ctx.log(`camera calibrated from markers ${ids.join(', ')}: f ${cal.f.toFixed(0)} px, ${cal.rms.toFixed(2)} px rms, camera at ${cal.centre.map(v => v.toFixed(0)).join(' / ')} mm (mat frame); 3D model updated`, 'ok');
       update();
       return true;
     } catch (e) { if (!quiet) ctx.toast(`Calibration failed: ${e.message}`); draw(); return false; }

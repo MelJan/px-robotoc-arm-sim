@@ -82,7 +82,22 @@ const hideForCamera = fn => { const v = oak.visible; oak.visible = false; fn(); 
 function placeMatAndCamera() {
   table.userData.placeMat(MAT.sToEdge);
   if (oak) scene.remove(oak);
-  const p = camPose(); oak = buildCamera(M, p.pos, p.target); scene.add(oak);
+  const p = camPose(); oak = buildCamera(M, p.pos, p.target);
+  // viewing pyramid: rays through the four image corners down to the desk (at most 1,5 m)
+  const cal = CAMERA.calib, C = tableToBoard(cal.centre), pts = [];
+  for (const [u, v] of [[0, 0], [CAMERA.w, 0], [CAMERA.w, CAMERA.h], [0, CAMERA.h]]) {
+    const d = [(u - cal.cx) / cal.f, (v - cal.cy) / cal.f, 1];
+    const wd = [0, 1, 2].map(i => cal.R[0][i] * d[0] + cal.R[1][i] * d[1] + cal.R[2][i] * d[2]);   // ray in the mat frame
+    const s = wd[2] < -1e-6 ? Math.min((-10 - cal.centre[2]) / wd[2], 1500 / Math.hypot(...wd)) : 1500 / Math.hypot(...wd);   // desk is 10 mm below the mat
+    pts.push(tableToBoard(cal.centre.map((c, i) => c + s * wd[i])));
+  }
+  const seg = [];
+  for (let i = 0; i < 4; i++) seg.push(...C, ...pts[i], ...pts[i], ...pts[(i + 1) % 4]);
+  const frustum = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(seg, 3)),
+    new THREE.LineBasicMaterial({ color: 0x0e8a77, transparent: true, opacity: 0.55 }));
+  frustum.name = 'camera-frustum';
+  oak.add(frustum);
+  scene.add(oak);
 }
 placeMatAndCamera();
 
