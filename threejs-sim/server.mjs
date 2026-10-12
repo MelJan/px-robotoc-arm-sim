@@ -174,6 +174,14 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 404, { error: 'No controller. Start with --mock or --controller <url>.' });
     }
     if (req.url === '/local/info') return sendJson(res, 200, { backend: CONTROLLER ? 'proxy' : MOCK ? 'mock' : 'none', allowMotion: !!(MOCK || ALLOW_MOTION), camera: CAMERA || (MOCK ? 'mock' : null) });
+    // Repo photos, read only: the model comparison (tools/compare.mjs) overlays them on renders.
+    const ph = req.url.match(/^\/photos\/([\w.-]+\.(?:jpe?g|png))$/i);
+    if (ph) {
+      const f = path.join(REPO, 'docs', 'images', 'photos', ph[1]);
+      if (!fs.existsSync(f)) return sendJson(res, 404, { error: 'no such photo' });
+      res.writeHead(200, { 'Content-Type': /png$/i.test(f) ? 'image/png' : 'image/jpeg', 'Cache-Control': 'no-cache' });
+      return fs.createReadStream(f).on('error', () => res.destroy()).pipe(res);
+    }
     if (req.url.startsWith('/ref/camera-2026-10-12.jpg')) {
       const f = path.join(REPO, 'docs', 'images', 'photos', 'controller-camera-2026-10-12.jpg');
       res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-cache' });

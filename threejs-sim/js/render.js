@@ -88,5 +88,18 @@ export function createView(canvas) {
     camera.updateProjectionMatrix();
   };
   const render = () => renderer.render(scene, camera);
-  return { renderer, scene, camera, controls, render, resize };
+
+  // Looks. 'studio' is the default above. 'office' is closer to the photos in docs/images/photos:
+  // diffuse ceiling light, weak directional light, no coloured rims (used by tools/compare.mjs).
+  const LOOKS = {
+    studio: { exposure: 0.88, env: 0.55, key: 3.4, hemi: 0.32, rimL: 1.9, rimR: 1.1, fill: 0.3, sun2: 1.1, keyPos: [-30, 45, 70] },
+    office: { exposure: 0.95, env: 1.1, key: 1.6, hemi: 0.9, rimL: 0.25, rimR: 0.2, fill: 0.5, sun2: 0.5, keyPos: [-10, 20, 90] },
+  };
+  const setLook = name => {
+    const l = LOOKS[name] || LOOKS.studio;
+    renderer.toneMappingExposure = l.exposure; scene.environmentIntensity = l.env;
+    key.intensity = l.key; key.position.set(...l.keyPos); hemi.intensity = l.hemi;
+    rimL.intensity = l.rimL; rimR.intensity = l.rimR; fill.intensity = l.fill; sun2.intensity = l.sun2;
+  };
+  return { renderer, scene, camera, controls, render, resize, setLook };
 }

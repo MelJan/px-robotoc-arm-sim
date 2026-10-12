@@ -671,4 +671,4 @@ resize();
 requestAnimationFrame(frame);
 
 // for the console and for tests
-window.sim = { ctl, world, scene, camera, controls, renderer, arm, camTab, get link() { return link; }, makePlan, THREE };
+window.sim = { ctl, world, scene, camera, controls, renderer, view, arm, camTab, get link() { return link; }, makePlan, THREE };
