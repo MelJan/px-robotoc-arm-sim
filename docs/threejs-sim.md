@@ -1,7 +1,7 @@
 # three.js simulator: what it does, how, and what comes next
 
 The recommendation in `HANDOVER.md` section 5 was to drop Unreal for a small web tool.
-That tool now exists in `threejs-sim/`, separate from `unreal/` and `sim/` (MuJoCo).
+That tool now exists in `threejs-sim/`, separate from `sim/` (MuJoCo). The Unreal project was deleted.
 How to run it is in `threejs-sim/README.md`.
 This document explains the parts, the decisions behind them, and the next steps, including how it gets into the controller's web page.
 

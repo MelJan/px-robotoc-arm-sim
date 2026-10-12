@@ -28,7 +28,7 @@ A 6DOF desktop arm (Tatiy kit, six MG996R servos, `docs/amazon-product-info.md`)
 | `docs/reference-robot-arm-repo.md` | Facts from the controller repo: units, guards, HTTP API, camera calibration and its frame |
 | `docs/controller-live-2026-10-12.md` | What the live controller showed: camera frame, UI, live HOME, the team's hand-taught pick and place |
 | `docs/simulator-proposal.md` | The pasted proposal: Godot vs Unreal + URLab vs MuJoCo |
-| `docs/unreal-setup.md` | Unreal 5.8 + MCP setup, toolchain, URLab version conflict |
+| `docs/unreal-setup.md` | Unreal 5.8 + MCP setup, toolchain, URLab version conflict. **Unreal route dropped on 2026-10-12; `unreal/` and `.mcp.json` were deleted** |
 | `sim/` | MuJoCo model (`arm.xml`), IK (`ik.py`), IK check, physics pick-and-place run |
 | `vision/blocks.py` | Cube finder: camera fit from the mat markers, colour segmentation, stack levels, positions |
 | `vision/test_synthetic.py` | Renders a stacked scene in MuJoCo through the real camera model and checks `blocks.py` |
@@ -36,8 +36,6 @@ A 6DOF desktop arm (Tatiy kit, six MG996R servos, `docs/amazon-product-info.md`)
 | `integration/` | Patch for `lutich/robot-arm` that serves the simulator under `/sim/` (not applied) |
 | `docs/images/photos/` | All real photos of the arm and setup (renamed from `Media*.jpg` and the old gripper/arm photos) |
 | `docs/images/web/` | Kit photos and bracket/servo/horn drawings from the web, with sources and dimensions in `SOURCES.md` (third-party, internal reference) |
-| `unreal/PxArmSim/` | Minimal UE 5.8 project with Unreal MCP set to auto-start |
-| `.mcp.json` | Connects Claude Code to the Unreal editor's MCP server at `http://127.0.0.1:8000/mcp` |
 
 ## 3. What works (checked)
 
@@ -77,7 +75,7 @@ Already answered: the gripper opens at 490, grips the cube at 590 and is fully c
 
 **Decided and built: `threejs-sim/`.** Run `node threejs-sim/server.mjs --mock` and open http://127.0.0.1:8770/. 18 tests: `node --test threejs-sim/test/*.test.mjs`.
 What it covers, how, and the next steps (including the controller-page integration) are in `docs/threejs-sim.md`.
-The rest of this section is the earlier state of the Unreal route, kept for reference.
+The rest of this section is the earlier state of the Unreal route, kept for reference. **The Unreal project (`unreal/`), the cloned URLab plugin and `.mcp.json` were deleted on 2026-10-12 at the user's request.** Unreal Engine 5.8 itself is still installed.
 
 State of the Unreal route when it was stopped:
 
@@ -128,5 +126,4 @@ a87fa26 Document live controller state and camera view
 ```
 
 The commit with the tracking plan, `vision/` and this handover follows these.
-Untracked on purpose: `unreal/PxArmSim 5.8/` and `unreal/PxArmSim/Plugins/UnrealRoboticsLab/`.
-Delete them if the Unreal route is dropped.
+The Unreal folders were deleted when the route was dropped.

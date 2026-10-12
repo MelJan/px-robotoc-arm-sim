@@ -1,5 +1,7 @@
 # Unreal Engine setup for Claude Code (MCP)
 
+> **Dropped on 2026-10-12.** The project folder `unreal/`, the URLab clone and `.mcp.json` were deleted; the simulator is `threejs-sim/`. This page is kept as a record.
+
 Goal: Claude Code can inspect and change the Unreal Editor scene directly, for example spawn the arm, move joints and read actor transforms.
 This belongs to the Unreal option in `simulator-proposal.md`.
 

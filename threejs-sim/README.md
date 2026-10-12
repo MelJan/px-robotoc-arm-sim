@@ -1,6 +1,6 @@
 # three.js arm simulator
 
-A browser simulator of the 6DOF arm, separate from the Unreal (`unreal/`) and MuJoCo (`sim/`) approaches.
+A browser simulator of the 6DOF arm, separate from the MuJoCo scripts in `sim/` (the Unreal route was dropped).
 Everything runs in the browser: kinematics, the controller's motion rules, collision checks, cube physics, planning, camera calibration and cube recognition.
 There are no npm dependencies; three.js r170 is vendored in `vendor/`.
 Node is only needed for the small server and the tests.
