@@ -1,6 +1,6 @@
 # Simulation concept: MuJoCo sandbox for the 6-servo arm
 
-Status: draft for review, nothing implemented yet.
+Status: implemented as described below, with the deviations listed in section 12. See the README for how to run it.
 Inputs: `arm-dimensions.md`, `servo-calibration.md`, `amazon-product-info.md`, and the control repo `/Users/jan/projects/robot-arm`.
 
 ## 1. Goal
@@ -412,3 +412,19 @@ The tested robot-arm commit is recorded, so an API change there is noticed.
 - Accuracy depends on calibration. A 1° error at the shoulder moves the tip by about 7 mm at full reach.
 - The gripper geometry is fitted to measurements, not taken from a drawing. The grasp is reliable in the sandbox only as far as these values are right.
 - The sandbox uses robot-arm's `synthetic` scope. Poses and demos saved in the sandbox cannot be loaded on the hardware, by robot-arm's design. Command logs in counts carry over instead.
+
+## 12. Implementation notes (2026-10-12)
+
+What was built follows sections 3 to 8. Deviations and decisions made during the build:
+
+- **`move_pose` exists in the sandbox.** `armsim/session.py` subclasses robot-arm's `Session` and adds it; the launcher registers `POST /api/move_pose`. The client still falls back to single-joint moves when a server lacks the route, so the same text interface works against the Pi today.
+- **The gripper jaws open across the arm plane** at S5 = 480. With jaws opening in the arm plane, the tilted PARK pose put one pad 10 mm into the table. This is an assumption about S5's zero, not a measurement.
+- **S4's HOME angle is assumed 95°, not 90°.** With 90° the PARK pose pressed the pads 5 mm into the table and the servos jammed the arm against table friction, exactly as real servos would. With 95° the pads rest on the base plate in PARK.
+- **Base position 40 mm inside the near edge**, from the calibration image, as the single number `base.x` in `scene.yaml`.
+- **Slot layout:** slots stay out of the corridor the arm sweeps during PARK/HOME transitions and at least 50 mm apart, because the open gripper spans about 62 mm over the fingers.
+- **The task layer lifts before it travels.** HOME is low (the pad bottoms about 22 mm above the table), so every pick and the return to HOME go through a waypoint at travel height.
+- **Rendering runs on one dedicated thread.** macOS allows the offscreen GL context only on the thread that created it, so all renders go through a worker thread; robot-arm's camera service and the snapshot route both use it.
+- **Camera fit:** the real camera is fitted from robot-arm's calibration record with 2,9 px RMS over the six markers; it stands about 52 cm from the arm at 31 cm height, looking back at the arm.
+- **The real HC-SR04 and OAK hardware routes** are untouched: distance stays disabled, the camera service is fed by the renderer.
+
+Test suite: 58 tests, about two minutes, including an HTTP end-to-end run of a pick and place through the text interface and a demo import and playback.
