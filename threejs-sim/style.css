@@ -104,3 +104,17 @@ table.params th { text-align: left; font-weight: 600; padding: 3px 8px 3px 0; wh
 table.params td { padding: 3px 6px 3px 0; vertical-align: top; }
 table.params td.note { font-size: 11px; }
 table.params code { font-size: 10px; line-height: 1.5; }
+
+/* ---- layout refresh: prominent task card, larger primary actions ---- */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.card.hero { border-color: #bfe3dc; box-shadow: 0 2px 10px rgba(14, 138, 119, 0.08); }
+.card h2 { margin: 0 0 4px; font-size: 15px; }
+.card h2 small { font-weight: 400; color: var(--muted); margin-left: 6px; font-size: 12px; }
+input.big { font-size: 15px; padding: 9px 11px; border-radius: 8px; }
+button.big { font-size: 14px; padding: 8px 16px; border-radius: 8px; font-weight: 600; }
+button.accent { background: #1d2733; color: #fff; border-color: #1d2733; }
+button.accent:hover:not(:disabled) { background: #2c3a4a; border-color: #2c3a4a; }
+.hdr-speed { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.hdr-speed select { padding: 4px 6px; }
+.hero .cam-stage { margin-top: 6px; }
+#tab-control > details, #tab-camera > details { padding: 8px 12px; }

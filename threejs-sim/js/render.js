@@ -41,13 +41,13 @@ export function createView(canvas) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMappingExposure = 0.88;
 
   const scene = new THREE.Scene();
   scene.background = gradientBackground();
   scene.environment = studioEnvironment(renderer);
   scene.environmentRotation.set(Math.PI / 2, 0, 0);   // env built Y-up, world is Z-up
-  scene.environmentIntensity = 0.9;
+  scene.environmentIntensity = 0.55;          // less ambient light, so the key light shapes the scene
 
   const camera = new THREE.PerspectiveCamera(36, 1, 0.5, 1500);
   camera.up.set(0, 0, 1);
@@ -60,18 +60,25 @@ export function createView(canvas) {
   controls.screenSpacePanning = true;
 
   // Key light: the window, high and to the arm's front left; the only shadow caster.
-  const key = new THREE.DirectionalLight(0xfff6ea, 2.4);
+  const key = new THREE.DirectionalLight(0xfff6ea, 3.4);
   key.position.set(-30, 45, 70); key.target.position.set(0, 12, 0);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
   Object.assign(key.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 20, far: 200 });
-  key.shadow.bias = -0.0003; key.shadow.normalBias = 0.03;
+  key.shadow.bias = -0.0003; key.shadow.normalBias = 0.03; key.shadow.radius = 2.5;
   scene.add(key, key.target);
-  const hemi = new THREE.HemisphereLight(0xf2f6ff, 0xb9b4aa, 0.55); hemi.position.set(0, 0, 100); scene.add(hemi);
+  const hemi = new THREE.HemisphereLight(0xf2f6ff, 0x9c978e, 0.32); hemi.position.set(0, 0, 100); scene.add(hemi);
   // Rim lights from behind, left cool and right warm: bright edges on the black brackets.
-  const rimL = new THREE.DirectionalLight(0xcfe0ff, 2.4); rimL.position.set(-35, -55, 45); scene.add(rimL);
-  const rimR = new THREE.DirectionalLight(0xffe4c8, 1.6); rimR.position.set(45, -40, 35); scene.add(rimR);
-  const fill = new THREE.DirectionalLight(0xffffff, 0.45); fill.position.set(60, 40, 25); scene.add(fill);
+  const rimL = new THREE.DirectionalLight(0xcfe0ff, 1.9); rimL.position.set(-35, -55, 45); scene.add(rimL);
+  const rimR = new THREE.DirectionalLight(0xffe4c8, 1.1); rimR.position.set(45, -40, 35); scene.add(rimR);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.3); fill.position.set(60, 40, 25); scene.add(fill);
+  // a second, softer sun from the other side with its own shadows: crossing shadows read as depth
+  const sun2 = new THREE.DirectionalLight(0xfff1e0, 1.1);
+  sun2.position.set(45, 30, 55); sun2.target.position.set(0, 12, 0);
+  sun2.castShadow = true; sun2.shadow.mapSize.set(1024, 1024); sun2.shadow.radius = 6;
+  Object.assign(sun2.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 20, far: 200 });
+  sun2.shadow.bias = -0.0004; sun2.shadow.normalBias = 0.04;
+  scene.add(sun2, sun2.target);
 
   const resize = () => {
     const r = canvas.parentElement.getBoundingClientRect();

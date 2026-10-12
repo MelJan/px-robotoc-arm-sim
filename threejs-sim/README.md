@@ -57,10 +57,12 @@ Opening `index.html` straight from disk does not work, because browsers block ES
 | `js/world.js` | Arm pose, grasp logic, physics stepping, collision report |
 | `js/planner.js` | Pick, place and stack plans, via points, headless verification, single-joint moves |
 | `js/calib.js` | Homography, focal length and pose, Levenberg-Marquardt |
+| `js/aruco.js` | ArUco marker detection for the mat markers (any camera position) |
 | `js/detect.js` | Colour segmentation and back-projection of cubes |
-| `js/model.js` | three.js model: brackets, servos, horns, gripper linkage, cables, desk |
+| `js/model/` | three.js model, one file per part: `textures`, `materials`, `geometry` (helpers, merging), `parts` (servo, horn, brackets), `arm`, `gripper`, `cables`, `desk` (board, mat, Pi, power supply, OAK camera, cubes); `index.js` exports them |
 | `js/render.js` | Renderer, lights, environment |
-| `js/camview.js` | Camera tab |
+| `js/camview.js` | Camera tab: frames, calibration, cube recognition, tracking |
+| `js/demo.js` | The tower-building physics demo |
 | `js/live.js` | HTTP client for the controller |
 | `js/app.js` | Page logic |
 | `server.mjs` | Static server, read-only proxy, mock controller |

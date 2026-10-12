@@ -139,7 +139,7 @@ export function initCameraTab(ctx) {
   // A new real frame (snapshot or image file): find the markers and refit the camera right away,
   // so the overlay and the camera in the 3D model follow a camera that has been moved.
   photo.onload = () => {
-    if (source !== 'saved' && source !== 'video' && $('cam-auto-on').checked) setTimeout(() => autoCalibrate({ quiet: true, announce: true }), 50);
+    if (source !== 'video' && $('cam-auto-on').checked) setTimeout(() => autoCalibrate({ quiet: true, announce: true }), 50);
   };
   $('cam-opacity').oninput = () => { photo.style.opacity = $('cam-opacity').value / 100; };
   for (const id of ['cam-show-sim', 'cam-show-marks', 'cam-show-grid']) $(id).onchange = () => { simCanvas.style.visibility = $('cam-show-sim').checked ? 'visible' : 'hidden'; draw(); };
@@ -355,6 +355,16 @@ export function initCameraTab(ctx) {
   }
   function update() { dirty = true; draw(); render(); }
 
-  loadSource();
-  return { update, render, markDirty: () => { dirty = true; }, get calibration() { return cal; }, addTracker, grabFrame, stopVideo };
+  // The first time the tab opens: a live snapshot when a real camera is connected (one read, only
+  // now), otherwise the saved frame. Nothing is loaded before the tab is opened.
+  let activated = false;
+  async function activate() {
+    if (activated) return;
+    activated = true;
+    let camera = null;
+    try { camera = (await (await fetch('/local/info', { cache: 'no-store' })).json()).camera; } catch { /* static server */ }
+    $('cam-source').value = camera && camera !== 'mock' ? 'live' : 'saved';
+    loadSource();
+  }
+  return { update, render, markDirty: () => { dirty = true; }, get calibration() { return cal; }, addTracker, grabFrame, stopVideo, activate };
 }
