@@ -70,7 +70,7 @@ web/
 ```
 
 For the implementation details, coordinate conventions and extension points,
-see [`../docs/threejs-digital-twin.md`](../docs/threejs-digital-twin.md).
+see [`../docs/threejs-implementation.md`](../docs/threejs-implementation.md).
 
 ## Calibration status
 

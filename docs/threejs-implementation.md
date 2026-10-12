@@ -1,4 +1,4 @@
-# Three.js digital twin implementation
+# Three.js implementation
 
 Status: initial offline implementation, 2026-10-12.
 
