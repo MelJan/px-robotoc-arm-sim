@@ -53,7 +53,8 @@ Units: metric scene, 1 unit = 1 m, so divide every value below by 100.
 Coordinate system:
 
 - Origin on the top surface of the board, directly under the S1 axis.
-- Z points up. Y points from the back edge, where the robot sits, toward the front. X runs along the 30 cm edge.
+- Z points up. Y points from the back edge, where the robot sits, toward the front. X runs along the 30 cm edge, positive to the right when seen from the robot looking toward the front.
+- The same frame is used by the MuJoCo model in `sim/arm.xml` (in metres) and by `pick-and-place-plan.md`.
 
 ### Board
 

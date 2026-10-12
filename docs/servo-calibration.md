@@ -1,8 +1,11 @@
 # Servo calibration notes
 
-Transcribed from the handwritten sheet in docs/images/Image.jpeg and corrected by hand.
+Transcribed from the handwritten sheet in docs/images/tick_measurement.jpeg and corrected by hand.
 All values are servo ticks. Direction (which sign is "up", "left", "open") is not yet
 recorded; see the open questions at the bottom.
+
+"Ticks" are **PCA9685 counts at a nominal 60 Hz**, about 4,07 µs per count.
+That comes from the controller repo, see `reference-robot-arm-repo.md`.
 
 ## Joint names
 
@@ -20,6 +23,26 @@ recorded; see the open questions at the bottom.
 | S1  | S2  | S3  | S4  | S5  | S6  |
 |-----|-----|-----|-----|-----|-----|
 | 320 | 427 | 403 | 220 | 480 | 650 |
+
+The controller app stores the same HOME (`config/reference-arm/home.json` in the controller repo).
+It also has a PARK pose, the supported rest pose before power on and after power off:
+
+| S1  | S2  | S3  | S4  | S5  | S6  |
+|-----|-----|-----|-----|-----|-----|
+| 330 | 540 | 580 | 195 | 480 | 650 |
+
+## Count guards in the controller software
+
+The app rejects any target outside these ranges. They are historical guards, not measured safe travel.
+
+| Servo | Low | High |
+|-------|-----|------|
+| S1 | 90 | 660 |
+| S2 | 185 | 660 |
+| S3 | 90 | 660 |
+| S4 | 90 | 660 |
+| S5 | 90 | 660 |
+| S6 | 490 | 660 |
 
 ## Measured 90° moves (raw, as written on the sheet)
 
@@ -62,5 +85,7 @@ No unit on the sheet, probably cm of gripper opening.
 - S1: was 85° meant, or 90°? The scaled 275 ticks assumes the 85° reading is right.
 - S2: confirm start value 467 vs 407.
 - For every joint: which tick direction is which physical direction (left/right, up/down, open/close)?
-- S4: minus 90° from home would be below 0 ticks, so the home pose sits at one end of the wrist range. Confirm the usable tick range per servo (0 to 1000? 0 to 4095?).
+- S4: minus 90° from home would be below 0 ticks. With the software guard at 90, S4 can only move 130 counts (about 47°) in the minus direction from home.
+- Several "home plus 90°" values exceed the 660 guard (S5: 710). S1 "home minus 90°" (45) is below the 90 guard. Those moves are rejected by the app as it is.
+- The historical config has a sign per servo (S1 -1, S2 -1, S3 +1, S4 -1, S5 -1, S6 -1). Check whether it matches the physical directions.
 - For every joint: the joint angle at the home tick. `pick-and-place-plan.md` needs it to turn computed angles into ticks.

@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+MUJOCO_LOG.TXT
+
+# Unreal project build output and local state
+unreal/*/Binaries/
+unreal/*/Intermediate/
+unreal/*/Saved/
+unreal/*/DerivedDataCache/
+unreal/*/.vs/
+unreal/*/*.sln

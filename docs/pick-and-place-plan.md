@@ -100,7 +100,9 @@ ticks = home_tick + direction · (q - q_home) · ticks_per_degree
 | S4 | 220 | 2,78 | **open** | **open** |
 | S5 | 480 | 2,56 | **open** | **open** |
 
-Round to whole ticks and clamp to the min/max range set in the UI for each servo.
+Ticks are PCA9685 counts (see `reference-robot-arm-repo.md`).
+Round to whole counts and check them against the controller's guards (S1, S3 to S5: 90 to 660; S2: 185 to 660).
+The controller rejects targets outside its bounds instead of clamping them, so a pose that does not fit is unreachable and must not be sent.
 The gripper (S6) does not use this formula, it switches between fixed values (section 4).
 
 ### Worked example
@@ -119,6 +121,8 @@ Cube at (5, 15), grasp height, no hover:
 | q5 (wrist rotation) | -18,4° |
 
 A forward check with these angles puts the wrist at r = 15,81, z = 19,025, and the cube centre at z = 1,325, as intended.
+
+The formulas are implemented in `sim/ik.py` and checked against the MuJoCo model in `sim/check_ik.py`, see section 8.
 
 ## 4. Motion sequence
 
@@ -143,6 +147,8 @@ Between poses the controller moves all joints in joint space at the demo speed s
 
 The UI already has a **Recorded Demo** panel ("Add position", "Run all once").
 The computed poses can be entered there as a recorded demo to test the sequence before any code drives the arm directly.
+Later, a script can send the poses through the controller's HTTP API (`move` per channel, or a demo file plus `demo/run`), see `reference-robot-arm-repo.md`.
+Demo playback runs at 1 to 100 counts/s; start slow.
 
 ## 5. Workspace and accuracy
 
@@ -186,14 +192,44 @@ When it is added, it should only correct the last few millimetres, not replace t
 This needs a fixed camera position and a calibration from image pixels to board centimetres.
 Later the camera could also find the start position on its own, so the start position no longer has to be measured by hand.
 
+The controller repo already has most of this: an OAK camera and a fitted pixel-to-table mapping on a printed ArUco mat, with about 1 mm accuracy on the mat surface.
+Its table frame differs from ours (origin at the mat edge, X forward, Y left, mm).
+The conversion and the missing offset are in `reference-robot-arm-repo.md`, section 3.
+The mapping is only valid on the mat surface; the top of a 2,65 cm cube appears shifted by perspective.
+
 ## 7. Before the first real run
 
 These have to be answered first, most of them are already listed in `servo-calibration.md` and `arm-dimensions.md`:
 
 - **Home angles:** measure the joint angle of S1 to S5 in the home pose (q_home in section 3).
 - **Directions:** for each servo, which tick direction is up, left or open.
-- **S4 range:** from home, S4 can only move in the plus direction. Check that the top-down wrist angle is reachable.
-- **Tick limits:** confirm the usable tick range per servo, so computed values can be clamped safely.
+- **S4 range:** from home, S4 can move only 130 counts (about 47°) in the minus direction before the 90 guard. The top-down grasp needs S4 at 86° to 112° from straight (section 8); check that this is reachable.
+- **S2 behind vertical:** for cubes closer than about 12 cm, the shoulder has to lean backwards (S2 = -14° at r = 10). Check that the real joint allows it, or keep start and target further out.
+- **Tick limits:** answered by the controller's guards (section 3, step 6). They are historical, not measured safe travel.
 - **S1 axis position:** confirm the 1,5 cm edge distance and that S1 is centred on the 30 cm edge, since every board coordinate depends on it.
 - **Gripper:** confirm whether 490 or 650 is open.
 - **Marks on the board:** mark the start and target positions so the cube can be placed at the same spot every time.
+
+## 8. Check in simulation
+
+`sim/` holds a MuJoCo model of the arm (`sim/arm.xml`) built from `arm-dimensions.md`, and the IK from section 3 (`sim/ik.py`).
+Setup and commands are in `sim/README.md`.
+
+`sim/check_ik.py` sets the computed joint angles in the model and checks where the gripper ends up.
+For every reachable test position, the cube-centre point of the gripper lands on the target to within rounding (below 1e-14 cm), the gripper points straight down, and the jaws are parallel to the cube faces.
+
+| Cube at (x, y) | Hover | S1 | S2 | S3 | S4 | S5 |
+|----------------|-------|----|----|----|----|----|
+| (5, 15) | 0 | 18,4° | 17,9° | 74,7° | 87,4° | -18,4° |
+| (5, 15) | 5 | 18,4° | 23,3° | 44,4° | 112,3° | -18,4° |
+| (-8, 12) | 0 | -33,7° | 10,2° | 84,0° | 85,9° | 33,7° |
+| (0, 10) | 0 | 0° | -14,2° | 107,6° | 86,6° | 0° |
+| (0, 20) | 0 | 0° | 46,3° | 33,8° | 99,9° | 0° |
+| (0, 25) | 0 | unreachable | | | | |
+
+Angles are joint angles of the model, measured from the straight-up zero pose; positive S2 to S4 tilt the arm forward.
+They are not yet servo counts, because the angles at HOME are not measured.
+
+`sim/pick_place.py` runs the full sequence of section 4 with physics (gravity, contacts, position-controlled joints).
+Result on 2026-10-12: the cube moved from (5, 15) to (-8, 12) and ended 0,28 cm from the target, which is inside the gripper tolerance.
+The masses, joint gains and friction in the model are placeholders, so this shows that the sequence and geometry work, not that the real servos will do the same.

@@ -21,28 +21,66 @@ If we go for URLab later, install UE 5.7 next to it (the Epic launcher can hold 
 
 | Tool | Needed for | State on 2026-10-12 |
 |------|------------|---------------------|
-| Unreal Engine 5.8 | Everything | Installing, in `C:\Program Files\Epic Games\UE_5.8` |
-| Visual Studio 2022 with "Game development with C++" | C++ projects, URLab, C++ plugins | **Not installed** |
-| CMake 3.24+ | Building URLab's dependencies (MuJoCo, CoACD, libzmq) | **Not installed** |
-| Python 3.11+ | URLab's `urlab_bridge`, our own scripts | Installed (3.13 and 3.15) |
-| Node.js 18+ | Only for the community MCP server `sam-david/unreal-mcp` | Not installed, not needed for Epic's MCP |
+| Unreal Engine 5.8.3 | Everything | Installed, `C:\Program Files\Epic Games\UE_5.8` |
+| Visual Studio 2022 Community 17.14 with the components UE 5.8 lists | C++ projects, URLab, C++ plugins | Installed by Claude Code via winget, see below |
+| CMake 4.4 | Building URLab's dependencies (MuJoCo, CoACD, libzmq) | Installed for the current user via winget |
+| Python 3.13 | URLab's `urlab_bridge`, `sim/` | Installed; `sim/` uses a `.venv` with MuJoCo 3.15 |
+| Node.js 24 LTS | Only for the community MCP server `sam-david/unreal-mcp` | Installed for the current user via winget |
 | Git | Cloning plugins | Installed |
+
+Visual Studio components, taken from `Engine/Config/Windows/Windows_SDK.json` of UE 5.8:
+workloads NativeGame, NativeDesktop, ManagedDesktop; MSVC 14.44 (VS 2022 17.14 LTSC) with ATL; Windows 11 SDK 22621; Clang; .NET 4.6.2 targeting pack; Unreal IDE and debugger integration.
+
+**Licence:** Visual Studio Community is only free for organisations under certain size limits. Check whether the company needs Professional or Enterprise instead.
 
 Epic's MCP plugin is built into the engine, so it works in a Blueprint-only project without Visual Studio.
 Visual Studio and CMake only matter once we add URLab or our own C++ code.
 
 ## 3. Epic's Unreal MCP (UE 5.8)
 
-Source: Epic's documentation page "Unreal MCP in Unreal Editor".
+Source: Epic's documentation page "Unreal MCP in Unreal Editor", plus the plugin files in the engine install.
+
+### Ready-made project: `unreal/PxArmSim`
+
+This repo contains a minimal Blueprint project, `unreal/PxArmSim/PxArmSim.uproject`, with everything below already set:
+
+| Setting | Where |
+|---------|-------|
+| Plugins `ModelContextProtocol` (Unreal MCP), `ToolsetRegistry`, `AllToolsets`, `PythonScriptPlugin` | `PxArmSim.uproject` |
+| `bAutoStartServer=True`, port 8000, path `/mcp` | `Config/DefaultEditorPerProjectUserSettings.ini` |
+
+Smoke test on 2026-10-12: the editor started headless (`UnrealEditor.exe PxArmSim.uproject -nullrhi -unattended`), the MCP server answered at `http://127.0.0.1:8000/mcp` about 20 s later, and an MCP session listed 52 toolsets.
+Among them: `ActorTools`, `SceneTools`, `PrimitiveTools`, `StaticMeshTools`, `BlueprintTools`, `MaterialTools`, `ProgrammaticToolset`, `EditorAppToolset` (viewport capture) and `LogsToolset`.
+
+Open it by double-clicking the `.uproject`, or through the Epic launcher.
+The first start compiles shaders and takes a while.
+A Blueprint project can later become a C++ project (needed for URLab) by adding a C++ class in the editor; that needs Visual Studio.
+Build output (`Binaries`, `Intermediate`, `Saved`, `DerivedDataCache`) is in `.gitignore`.
+Large binary assets (`.uasset`, meshes) will need Git LFS once the project grows.
+
+### Doing it by hand in another project
 
 1. Create the project. Choose **C++** instead of Blueprint if URLab may follow, because URLab only works in C++ projects. A C++ project needs Visual Studio.
 2. **Edit > Plugins**: enable **Unreal MCP** and **All Toolsets**. The Toolset Registry plugin is enabled automatically. Restart the editor.
 3. **Editor Preferences > General > Model Context Protocol**: turn on **Auto Start Server**. The defaults are port `8000` and path `/mcp`, so the server runs at `http://127.0.0.1:8000/mcp`.
 4. Or start it manually in the editor console: `ModelContextProtocol.StartServer`.
 
-Shipped toolsets include `SceneTools`, `ActorTools`, `MaterialInstanceTools` and `ObjectTools`.
 Community guides report that the toolsets sometimes have to be enabled by hand before any tools appear.
 After changing toolsets, run `ModelContextProtocol.RefreshTools`.
+
+With tool search on (the default), the server lists only `list_toolsets`, `describe_toolset` and `call_tool`.
+Claude discovers the actual tools through these.
+
+Toolsets that matter for us, from the engine's plugin folder (`Engine/Plugins/Experimental/Toolsets`):
+
+| Toolset | Useful tools |
+|---------|--------------|
+| `EditorToolset` | `CaptureViewport` (screenshot with actor labels and a metric grid), `CaptureEditorImage`, `Get/SetCameraTransform`, `GetVisibleActors`, `SelectActors`, `FocusOnActors`, `WorldPosToScreenCoords`, editor logs |
+| `PhysicsToolsets` | Physics setup |
+| `SlateInspectorToolset` | Inspect editor UI widgets |
+| `PluginToolset`, `ConfigSettingsToolset` | Enable plugins and change settings |
+
+`CaptureViewport` lets Claude look at the scene without computer use.
 
 ### Connecting Claude Code
 
@@ -86,8 +124,9 @@ It is a fallback for things the MCP tools cannot do, like clicking through edito
 Not verified yet: a third-party blog post says the Claude Code CLI's built-in computer-use server is macOS-only, and that the Claude Desktop app also offers computer use on Windows.
 Check the current Claude Code and Claude Desktop documentation before relying on it.
 
-For checking the scene visually, a viewport screenshot through MCP is usually more reliable than computer use.
-The community server in section 4 has a screenshot tool; Epic's documentation does not mention one.
+For checking the scene visually, a viewport screenshot through MCP is more reliable than computer use.
+Epic's `EditorToolset` has `CaptureViewport` and `CaptureEditorImage` (section 3), and the community server in section 4 has a screenshot tool too.
+So computer use should only be needed for editor dialogs that no tool covers.
 
 ## 6. Next steps
 
