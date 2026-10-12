@@ -198,6 +198,9 @@ Its table frame differs from ours (origin at the mat edge, X forward, Y left, mm
 The conversion and the missing offset are in `reference-robot-arm-repo.md`, section 3.
 The mapping is only valid on the mat surface; the top of a 2,65 cm cube appears shifted by perspective.
 
+Update: `tracking-plan.md` replaces the stored mapping with a camera model fitted to the mat markers in every frame.
+It finds cubes on the mat and on stacks, RGB only, and covers the stacking task.
+
 ## 7. Before the first real run
 
 These have to be answered first, most of them are already listed in `servo-calibration.md` and `arm-dimensions.md`:
