@@ -1,87 +1,124 @@
 # Robot arm dimensions
 
-Source: whiteboard sketch `docs/images/Image (1).jpeg`.
-Diagram: `docs/images/arm-dimensions.svg` (PNG copy: `arm-dimensions.png`,
-generator: `docs/images/make_arm_dimensions_svg.py`).
+Sources, in order of priority:
 
-All values in **cm**. Values marked (?) are interpretations of the sketch and should be checked.
+1. Corrections from the team (link lengths S2 to S3 and S4 to S5, gripper values, block size, edge distance).
+2. Photo measurements `docs/images/Bild.png` to `Bild (3).png` for the arm links.
+3. Whiteboard sketch `docs/images/Image (1).jpeg`, only where nothing else exists.
+
+Diagram: `docs/images/arm-dimensions.svg` (PNG copy: `arm-dimensions.png`).
+The side view shows the arm in the pose of the app screenshot `Bildschirmfoto 2026-10-12 um 13.37.15.png`.
+Regenerate it with `python3 docs/images/make_arm_dimensions_svg.py`; all values sit at the top of that script.
+
+All values in **cm**, measured from servo horn centre to servo horn centre.
 Joint names follow `docs/servo-calibration.md`.
 
 ![Arm dimensions](images/arm-dimensions.png)
 
-## 1. Values read from the whiteboard
+## 1. Measured values
 
-| Item | Value | What it measures |
-|------|-------|------------------|
-| Base plate width | 30 | Long front edge of the base plate |
-| Base plate depth | 38 | Side edge of the base plate |
-| Base plate thickness | not measured | |
-| Mount plate height | 1,5 (?) | Red bracket next to the small plate the arm sits on |
-| S1 axis to plate edge | 9,5 | "Distance centre to base edge", top view. S1 sits centred on the 30 cm width (?) |
-| S1 to S2 height | 9,6 | From top of mount plate up to the shoulder axis (?) |
-| S2 to S3 | 10,5 | Shoulder axis to elbow axis |
-| S3 to S4 | 12,5 | Elbow axis to wrist flexion axis |
-| S4 to S5 | 6,7 | Wrist flexion axis to wrist rotation joint (labelled "joint") |
-| S4 to gripper tip | 17,5 | Wrist flexion axis to the end of the gripper fingers |
-| Gripper height, open | 10,0 | Top finger pivot to finger tips |
-| Gripper tip gap, open | 4,3 | Distance between finger tips when fully open |
-| Gripper height, closed on block | 11,0 | Top pivot to tips while holding a block |
-| Block width in gripper | 3,6 (?) | Written as "13,6 cm", leading stroke read as a dimension tick |
-| Finger link, stretched | 11,5 | Full finger length, pivot to tip |
-| Test cube | 2,65 x 2,65 x 2,65 | Object to pick up |
+### Board and arm
 
-Derived: S5 to gripper tip = 17,5 - 6,7 = **10,8**.
-This matches the closed gripper height (11,0) within measuring accuracy.
+| Item | Value | Source | What it measures |
+|------|-------|--------|------------------|
+| Board | 30 x 38 | Whiteboard | Board the robot is mounted on |
+| S1 axis to board edge | 1,5 | Team | Back edge of the board to the robot's vertical centre axis |
+| Board top to S2 | 9,6 | Whiteboard | Height of the shoulder axis |
+| S2 shoulder to S3 elbow | 10,5 | Team | Bild (3) showed 10,0 |
+| S3 elbow to S4 wrist flexion | 12,6 | Bild (3) | |
+| S4 wrist flexion to gripper flange | 6,7 | Team, matches the whiteboard | Includes the S5 wrist rotation servo body. Bild (3) showed 8,6 to a lower point |
+
+S5 wrist rotation turns around the link axis from S4 to the flange.
+Its exact position along that axis does not change the kinematics, so the flange is the S5 reference point.
+
+### Gripper (S6)
+
+| State | Flange to finger tips | Gap between the pads |
+|-------|-----------------------|----------------------|
+| Open | 10,0 | 4,5 |
+| Closed | 11,5 | 0, the pads touch |
+| Holding the test cube | 11,0 to the cube centre | 2,65 |
+
+| Item | Value |
+|------|-------|
+| Rubber pads on the finger tips | 1,2 high |
+| Test cube | 2,65 x 2,65 x 2,65 |
+
+The fingers get longer as they close, because of the linkage.
 
 ## 2. Blender setup
 
-Units: set the scene to metric, 1 unit = 1 m, so every value below is divided by 100.
+Units: metric scene, 1 unit = 1 m, so divide every value below by 100.
 
 Coordinate system:
 
-- Origin at the top surface of the base plate, directly under the S1 axis.
-- Z points up. Y points from the back edge (where the arm sits) toward the front. X is along the 30 cm width.
+- Origin on the top surface of the board, directly under the S1 axis.
+- Z points up. Y points from the back edge, where the robot sits, toward the front. X runs along the 30 cm edge.
 
-### Base plate
+### Board
 
-| Object | Size X | Size Y | Size Z | Position of centre (x, y, z) |
-|--------|--------|--------|--------|------------------------------|
-| Base plate | 30 | 38 | thickness t (not measured, 1,0 as placeholder) | (0, 9,5, -t/2) |
-| Mount plate | not measured, 12 as placeholder | not measured, 6 as placeholder | 1,5 | (0, -0,5, 0,75) |
+| Object | Size X | Size Y | Size Z | Centre (x, y, z) |
+|--------|--------|--------|--------|------------------|
+| Board | 30 | 38 | t, not measured (use 1,0 as placeholder) | (0, 17,5, -t/2) |
 
-The base plate centre sits 9,5 cm in front of the S1 axis, because the S1 axis is 9,5 cm from the back edge and the plate is 38 deep: 19 - 9,5 = 9,5.
+The board centre is 17,5 in front of the S1 axis: half the depth is 19, minus the 1,5 edge distance.
 
 ### Joint origins in the straight-up zero pose
 
-Every joint stacked vertically above S1. This is a modelling pose, not the servo home position.
+All joints stacked vertically above S1. This is a modelling pose, not the servo home position.
 
-| Joint | Name | Origin (x, y, z) | Rotation axis | Link to next joint |
-|-------|------|------------------|---------------|--------------------|
-| S1 | Base rotation | (0, 0, 1,5) | Z (vertical) | 9,6 up |
-| S2 | Shoulder | (0, 0, 11,1) | X (pitch) | 10,5 |
-| S3 | Elbow | (0, 0, 21,6) | X (pitch) | 12,5 |
-| S4 | Wrist flexion | (0, 0, 34,1) | X (pitch) | 6,7 |
-| S5 | Wrist rotation | (0, 0, 40,8) | Z of the link (roll) | 10,8 |
-| Tip | Gripper tip | (0, 0, 51,6) | | |
+| Joint | Name | Origin (x, y, z) | Rotation axis | Distance to next |
+|-------|------|------------------|---------------|------------------|
+| S1 | Base rotation | (0, 0, 0) | Z (vertical) | 9,6 up |
+| S2 | Shoulder | (0, 0, 9,6) | X (pitch) | 10,5 |
+| S3 | Elbow | (0, 0, 20,1) | X (pitch) | 12,6 |
+| S4 | Wrist flexion | (0, 0, 32,7) | X (pitch) | 6,7 |
+| S5 | Wrist rotation, gripper flange | (0, 0, 39,4) | Link axis (roll) | 10,0 open / 11,5 closed |
+| Tips | Finger tips, open | (0, 0, 49,4) | | |
+| Tips | Finger tips, closed | (0, 0, 50,9) | | |
+| Cube | Centre of a held cube | (0, 0, 50,4) | | |
 
-Total height in zero pose above the base plate: **51,6**.
-Maximum horizontal reach from S2 with the arm stretched out: 10,5 + 12,5 + 17,5 = **40,5**.
+Horizontal reach from the S2 axis with the arm stretched out:
+
+| Up to | Reach |
+|-------|-------|
+| Finger tips, open | 39,8 |
+| Centre of a held cube | 40,8 |
+| Finger tips, closed | 41,3 |
 
 Suggested armature: one bone per link, parented in chain order S1, S2, S3, S4, S5, with the gripper as a child of S5.
 Lock each bone to its single rotation axis from the table.
 
-### Gripper (S6)
+### Gripper linkage for modelling (estimated)
 
-Four-bar style gripper with three pivots at the top and two fingers.
+The photos show a parallel linkage.
+A flange on S5 carries a base plate with two meshing gears.
+Each jaw hangs on two parallel links, one on the gear and one on an outer pivot.
+The finger therefore moves without turning.
+A rubber pad sits on the inner face of each finger tip.
 
-- Open: 10,0 high, finger tips 4,3 apart.
-- Closed on a block: 11,0 high, block 3,6 wide.
-- Each finger is 11,5 long when stretched, with a middle pivot whose position was not measured.
+Only the values in section 1 are measured.
+The values below were fitted so the linkage reproduces them exactly, and the diagram is drawn with them.
+Gripper-local coordinates: u to the side, v down from the flange, in cm.
+
+| Part | Value |
+|------|-------|
+| Base plate | about 6,4 wide, 2,4 high |
+| Gear centres | u = ±0,85, v = 1,4 |
+| Outer link pivots | u = ±2,2, v = 1,9 |
+| Link length, both links | 3,5 |
+| Pad contact point relative to the gear-link end | 1,52 inward, 6,66 down |
+| Pad size | 1,2 high, about 0,27 thick |
+| Link angle from vertical: open, holding the cube, closed | 56,4°, 34,7°, 11,0° |
+
+S6 drives the gears, so the S6 servo value maps to this link angle.
+The gripper tick range in `servo-calibration.md` is 490 to 650.
 
 ## 3. Open questions
 
-- **9,6 reference:** does it start at the top of the mount plate or at the top of the base plate? This changes every Z value by 1,5.
-- **1,5:** is it the mount plate thickness, or an offset of the arm centre from the mount plate edge? The red note "Distance centre to base edge" stands right next to it.
-- **Block width 3,6 vs test cube 2,65:** the gripper sketch shows a 3,6 cm object, but the test cube is 2,65 cm. Are these two different objects?
-- **Not measured:** base plate thickness, mount plate footprint, link widths, servo body sizes, and the finger middle pivot position.
+- **S1 edge distance vs. base footprint.** The Amazon drawing gives a 9 x 8,4 cm base plate, so a centred S1 axis sits at least 4,2 cm from the plate edge. Which edge does the 1,5 cm refer to? See `amazon-product-info.md`.
+- **9,6 shoulder height** comes only from the whiteboard.
+- **S1 position along the 30 cm edge** is assumed to be centred.
+- **Gripper direction:** does tick value 650 mean open or closed?
+- **Not measured:** board thickness, robot base footprint, link widths and servo body sizes.
 - **Home pose angles:** to place the model in the servo home position (320 / 427 / 403 / 220 / 480 / 650), we need the joint angle at each home tick value.
