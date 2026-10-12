@@ -10,7 +10,7 @@ A 6DOF desktop arm (Tatiy kit, six MG996R servos, `docs/amazon-product-info.md`)
 - Servo values are **PCA9685 counts at 60 Hz**, not degrees. The servos give no position feedback.
 - Plan: **open loop**. Start from a calibrated HOME pose, compute joint angles with inverse kinematics from measured link lengths, and convert them to counts with the measured counts per degree.
 - An **RGB camera** (OAK, at the far end of the mat) finds the cubes. It could later make fine corrections near the cube. **Its depth output is unusable**, so we use RGB only.
-- A **simulator** to develop and check all this without the real arm. Which engine to use is open, see section 5.
+- A **simulator** to develop and check all this without the real arm: the three.js simulator in `threejs-sim/`, see section 5.
 
 ## 2. Repos and files
 
@@ -32,6 +32,10 @@ A 6DOF desktop arm (Tatiy kit, six MG996R servos, `docs/amazon-product-info.md`)
 | `sim/` | MuJoCo model (`arm.xml`), IK (`ik.py`), IK check, physics pick-and-place run |
 | `vision/blocks.py` | Cube finder: camera fit from the mat markers, colour segmentation, stack levels, positions |
 | `vision/test_synthetic.py` | Renders a stacked scene in MuJoCo through the real camera model and checks `blocks.py` |
+| `threejs-sim/` | **The simulator**: browser app with kinematics, controller emulation, collision, cube physics, planning, camera calibration and cube recognition. `threejs-sim/README.md`, design in `docs/threejs-sim.md` |
+| `integration/` | Patch for `lutich/robot-arm` that serves the simulator under `/sim/` (not applied) |
+| `docs/images/photos/` | All real photos of the arm and setup (renamed from `Media*.jpg` and the old gripper/arm photos) |
+| `docs/images/web/` | Kit photos and bracket/servo/horn drawings from the web, with sources and dimensions in `SOURCES.md` (third-party, internal reference) |
 | `unreal/PxArmSim/` | Minimal UE 5.8 project with Unreal MCP set to auto-start |
 | `.mcp.json` | Connects Claude Code to the Unreal editor's MCP server at `http://127.0.0.1:8000/mcp` |
 
@@ -52,7 +56,7 @@ Commands:
 cd C:\Users\adm_bjung\Documents\px-robotic-arm-sim
 .\.venv\Scripts\python.exe sim\check_ik.py
 .\.venv\Scripts\python.exe sim\pick_place.py --view
-.\.venv\Scripts\python.exe vision\blocks.py docs\images\controller-camera-2026-10-12.jpg --out annotated.png
+.\.venv\Scripts\python.exe vision\blocks.py docs\images\photos\controller-camera-2026-10-12.jpg --out annotated.png
 .\.venv\Scripts\python.exe vision\blocks.py --url http://10.102.4.103:8765 --every 5     # GET only, never moves the arm
 .\.venv\Scripts\python.exe vision\test_synthetic.py
 ```
@@ -61,7 +65,7 @@ cd C:\Users\adm_bjung\Documents\px-robotic-arm-sim
 
 1. **Joint angle at HOME and direction for each servo.** Without these, IK angles cannot become counts. Best route: a small ArUco marker on the gripper, then fit from a few commanded poses (`docs/tracking-plan.md`, section 4).
 2. **Which HOME.** The live controller has S5 = 250, S6 = 550; the docs and controller repo have S5 = 480, S6 = 650.
-3. **Offset `d`** from the S1 axis to the mat's near edge. It links the camera frame to the arm frame. By eye about 4 cm; measure it, or fit it from an S1 sweep.
+3. **Offset `d`** from the S1 axis to the mat's near edge. It links the camera frame to the arm frame. From the overhead photo `docs/images/photos/setup-top-view-base.jpg` about −2,5 cm (S1 is 2,5 cm *in front of* the mat's near edge; the mat overhangs the board's back edge). Measure it, or fit it from an S1 sweep.
 4. **Colours.** Only orange is tuned. Take one frame with all real cube colours on the mat.
 5. **A real stack frame** to check level detection outside the simulation.
 6. **Reach.** A stack's third cube needs the stack within about 16 cm of S1 (2 cm hover). Close positions need S2 to lean backwards. S4 has only about 47° below HOME before its guard.
@@ -69,9 +73,13 @@ cd C:\Users\adm_bjung\Documents\px-robotic-arm-sim
 
 Already answered: the gripper opens at 490, grips the cube at 590 and is fully closed at 650. The tick unit is PCA9685 counts at 60 Hz.
 
-## 5. Simulator: where it stands and a recommendation
+## 5. Simulator
 
-State when stopped:
+**Decided and built: `threejs-sim/`.** Run `node threejs-sim/server.mjs --mock` and open http://127.0.0.1:8770/. 18 tests: `node --test threejs-sim/test/*.test.mjs`.
+What it covers, how, and the next steps (including the controller-page integration) are in `docs/threejs-sim.md`.
+The rest of this section is the earlier state of the Unreal route, kept for reference.
+
+State of the Unreal route when it was stopped:
 
 - Unreal Engine 5.8.3 is installed and its MCP works with `unreal/PxArmSim`.
 - The user also opened `unreal/PxArmSim 5.8/`. It looks like a copy the launcher made. Its `.uproject` has a machine-specific engine GUID; it is **not committed**.
@@ -108,6 +116,7 @@ Unreal (or URLab) only pays off if photoreal rendering or synthetic camera image
 - Only GET requests to the controller: `state`, `camera/status`, `camera/snapshot.jpg`, `camera/capture`, `distance/status`, `openapi.json`. No POST was ever sent. The arm was powered and armed while it was read.
 - `demo/load` was not used, because it replaces the demo draft the team is working on.
 - Anything that moves the arm should go through the controller's own guards, at low demo speed, with someone at the emergency stop.
+- **Rule from the user (2026-10-12): do not command the real arm, and keep even reads to a minimum (other people use it; the camera and servos can overheat).** The simulator is read only towards a real controller unless its server is started with `--allow-motion`, and camera frames are fetched one at a time on request. Test against `server.mjs --mock`.
 
 ## 8. Git
 

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arm Simulator</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 20h8M8 20v-4l4-6 5 2m-5-2 1-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="10" r="1.6" fill="currentColor"/><circle cx="17" cy="12" r="1.4" fill="currentColor"/></svg>
+    <span>Arm simulator</span>
+    <span id="mode-badge" class="badge">simulation</span>
+  </div>
+  <div class="hdr-right">
+    <span id="hud" class="hud"></span>
+    <button id="estop" class="estop" title="Stops the simulation, and the real arm when connected (POST /api/stop)">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg>
+      EMERGENCY STOP</button>
+  </div>
+</header>
+
+<main>
+  <section id="view">
+    <canvas id="canvas"></canvas>
+    <div class="view-tools">
+      <button data-view="orbit" class="on">Perspective</button>
+      <button data-view="top">Top</button>
+      <button data-view="side">Side</button>
+      <button data-view="oak">OAK camera</button>
+      <span class="sep"></span>
+      <label><input type="checkbox" id="show-shapes"> Collision shapes</label>
+      <label><input type="checkbox" id="show-path" checked> Path</label>
+      <label><input type="checkbox" id="show-ghost" checked> Live ghost</label>
+    </div>
+    <div id="contacts" class="contacts" hidden></div>
+    <div id="toast" class="toast" hidden></div>
+  </section>
+
+  <div id="splitter" role="separator" aria-orientation="vertical" title="Drag to resize the sidebar (double-click: default width)"></div>
+  <aside id="panel">
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="control" class="on">Arm &amp; tasks</button>
+      <button role="tab" data-tab="camera">Camera</button>
+    </nav>
+    <div id="tab-control">
+    <details open>
+      <summary>Joints <small>counts at 60 Hz, like the controller</small></summary>
+      <div id="joints"></div>
+      <div class="row wrap">
+        <button id="go-home">Go HOME</button>
+        <button id="go-park">Go PARK</button>
+        <button id="power-on" title="After a stop: PARK, then HOME">Power on</button>
+        <label class="inline">Step <input id="step" type="number" min="1" max="100" value="10"></label>
+      </div>
+      <div class="row wrap">
+        <label class="inline">Sim speed
+          <select id="time-scale"><option value="1">1×</option><option value="3">3×</option><option value="10" selected>10×</option><option value="30">30×</option></select></label>
+        <label class="inline"><input type="checkbox" id="stop-on-contact" checked> Stop when the arm hits itself or the board</label>
+      </div>
+      <p class="note" id="pose-readout"></p>
+    </details>
+
+    <details open>
+      <summary>Task <small>move and stack cubes</small></summary>
+      <div class="row">
+        <input id="cmd" type="text" placeholder="blue on orange · grün auf blau · yellow to 0 14" autocomplete="off">
+        <button id="plan-btn" class="primary">Plan</button>
+      </div>
+      <div class="row wrap">
+        <label class="inline">Playback
+          <select id="exec-mode">
+            <option value="demo">Demo playback (all joints together)</option>
+            <option value="moves">Single-joint moves (HTTP API)</option>
+          </select></label>
+        <label class="inline">Demo speed <input id="demo-speed" type="number" min="1" max="100" value="40"></label>
+      </div>
+      <div id="plan-out" class="plan-out"></div>
+      <div class="row wrap">
+        <button id="run-sim" disabled>Run in sim</button>
+        <button id="send-live" class="danger" disabled title="Needs a live connection with control enabled">Send to arm</button>
+        <button id="export-plan" disabled>Copy as demo JSON</button>
+      </div>
+      <div class="row">
+        <label class="inline">Gripper to x <input id="gx" type="number" step="0.5" value="0"></label>
+        <label class="inline">y <input id="gy" type="number" step="0.5" value="14"></label>
+        <label class="inline">z <input id="gz" type="number" step="0.5" value="5"></label>
+        <button id="goto-xyz">Go</button>
+      </div>
+      <p class="note">Gripper pointing down; z is the height of a held cube's centre (cm, board frame).</p>
+    </details>
+
+    <details open>
+      <summary>Scene <small>cubes on the board</small></summary>
+      <div id="cubes"></div>
+      <div class="row wrap">
+        <select id="new-colour"><option>orange</option><option>blue</option><option>yellow</option><option>green</option><option>red</option></select>
+        <label class="inline">x <input id="nx" type="number" step="0.5" value="0"></label>
+        <label class="inline">y <input id="ny" type="number" step="0.5" value="12"></label>
+        <button id="add-cube">Add</button>
+        <button id="reset-scene">Reset</button>
+      </div>
+      <p class="note">Click a cube's ⌖ button, then click on the mat to drop it there.</p>
+      <details class="sub">
+        <summary>Import from the camera (vision/blocks.py output)</summary>
+        <textarea id="vision-json" rows="3" placeholder='{"cubes":[{"colour":"orange","x_mm":154.5,"y_mm":-108,"level":0,"yaw_deg":3}]}'></textarea>
+        <button id="vision-import">Import</button>
+      </details>
+    </details>
+
+    <details>
+      <summary>Live controller <small id="live-status">not connected</small></summary>
+      <div class="row">
+        <input id="live-url" type="text" placeholder="same origin (served by the controller or server.mjs)">
+        <button id="live-connect">Connect</button>
+      </div>
+      <div class="row wrap">
+        <label class="inline"><input type="checkbox" id="live-follow"> Sim follows the arm</label>
+        <label class="inline" title="One snapshot every 10 s; off by default"><input type="checkbox" id="live-cam-on"> Camera snapshot</label>
+        <button id="live-demo" disabled>Load its demo into the sim</button>
+      </div>
+      <img id="live-cam" class="cam" alt="" hidden>
+      <div class="armbox">
+        <label><input type="checkbox" id="live-enable" disabled> I am at the emergency stop, the arm's path is clear, and I want this page to move the real arm.</label>
+        <div class="row wrap">
+          <button id="live-home" class="danger" disabled>Arm: Go HOME</button>
+          <button id="live-park" class="danger" disabled>Arm: Go PARK</button>
+        </div>
+      </div>
+      <p class="note">Commands go through the controller's own checks (bounds, one motion at a time). Sending needs the page served by the controller or by <code>server.mjs --controller … --allow-motion</code>.</p>
+    </details>
+
+    <details>
+      <summary>Calibration <small>angle at HOME, direction, counts per degree</small></summary>
+      <table id="calib"></table>
+      <div class="row wrap">
+        <label class="inline">S1 → mat edge d <input id="mat-d" type="number" step="0.1"> cm</label>
+      </div>
+      <div class="row wrap">
+        <button id="calib-save">Save</button>
+        <button id="calib-reset">Defaults</button>
+        <button id="calib-export">Copy JSON</button>
+      </div>
+      <p class="note">Not measured yet (HANDOVER.md, open item 1). Defaults are fitted to the team's taught demo; they match the controller's historical sign table.</p>
+    </details>
+
+    <details>
+      <summary>Log</summary>
+      <div id="log" class="log"></div>
+    </details>
+    </div>
+
+    <div id="tab-camera" hidden>
+      <details open>
+        <summary>Simulated OAK view <small>with the real frame on top</small></summary>
+        <div class="cam-stage">
+          <canvas id="cam-sim" width="960" height="540"></canvas>
+          <img id="cam-photo" alt="" style="opacity:0.5">
+          <canvas id="cam-overlay"></canvas>
+        </div>
+        <div class="row wrap">
+          <label class="inline">Frame
+            <select id="cam-source">
+              <option value="saved">Saved frame, 2026-10-12</option>
+              <option value="live">Live snapshot (read only)</option>
+              <option value="video">Live video (read only, stops after 10 min)</option>
+              <option value="file">Image file…</option>
+            </select></label>
+          <button id="cam-refresh" disabled title="Reads the camera; nothing is sent">Refresh snapshot</button>
+          <input id="cam-file" type="file" accept="image/*" hidden>
+        </div>
+        <p class="note" id="cam-status"></p>
+        <div class="row wrap">
+          <label class="inline">Real frame <input id="cam-opacity" type="range" min="0" max="100" value="50"></label>
+          <label class="inline"><input type="checkbox" id="cam-show-sim" checked> Simulation</label>
+          <label class="inline"><input type="checkbox" id="cam-show-marks" checked> Markers</label>
+          <label class="inline"><input type="checkbox" id="cam-show-grid" checked> Mat grid &amp; axes</label>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Cube recognition <small>cubes lying on the mat</small></summary>
+        <div class="row wrap">
+          <button id="cam-detect" class="primary">Find cubes in the frame</button>
+          <button id="cam-detect-use" disabled>Put them into the sim</button>
+        </div>
+        <div class="row wrap">
+          <label class="inline" title="Runs the trackers on the frame shown above (best with Live video)"><input type="checkbox" id="cam-track"> Track continuously</label>
+          <label class="inline">every
+            <select id="cam-track-rate"><option value="2000">2 s</option><option value="1000" selected>1 s</option><option value="500">0,5 s</option><option value="200">0,2 s</option></select></label>
+          <label class="inline"><input type="checkbox" id="cam-track-sim"> Move sim cubes to what the camera sees</label>
+        </div>
+        <p class="note" id="cam-track-stats"></p>
+        <div id="cam-detections" class="note"></div>
+      </details>
+
+      <details open>
+        <summary>Calibration <small>camera pose and focal length from the mat markers</small></summary>
+        <div class="row wrap">
+          <button id="cam-use-saved">Use detected corners (saved frame)</button>
+          <button id="cam-pick">Pick marker centres</button>
+          <button id="cam-skip">Skip marker</button>
+          <button id="cam-clear">Clear points</button>
+        </div>
+        <p class="note" id="cam-pick-hint"></p>
+        <div class="row wrap">
+          <button id="cam-solve" class="primary">Solve</button>
+          <button id="cam-reset">Reset to blocks.py fit</button>
+          <button id="cam-copy">Copy parameters</button>
+        </div>
+        <table id="cam-params" class="params"></table>
+        <details class="sub">
+          <summary>How the matching works</summary>
+          <ol class="note">
+            <li>Each mat marker has known corners on the mat (mm). In the frame, its corners or centre are found (detected by <code>vision/blocks.py</code>, or clicked here).</li>
+            <li>A homography maps the mat plane to the image (normalised DLT, at least 4 points).</li>
+            <li>The homography gives the focal length (its two rotation columns must be orthogonal and of equal length) and a first pose.</li>
+            <li>Levenberg-Marquardt then minimises the reprojection error over pose, focal length and principal point.</li>
+            <li>Orange squares are the markers reprojected with the fitted camera, white circles the measured points, blue crosses their reprojection, red lines the error (5× enlarged).</li>
+          </ol>
+        </details>
+      </details>
+    </div>
+  </aside>
+</main>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

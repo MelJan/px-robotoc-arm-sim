@@ -9,9 +9,9 @@ At that time the app was in **hardware mode, armed, outputs on**, and the grippe
 
 ## 1. Camera view
 
-![Camera snapshot](images/controller-camera-2026-10-12.jpg)
+![Camera snapshot](images/photos/controller-camera-2026-10-12.jpg)
 
-`images/controller-camera-2026-10-12.jpg`: one RGB frame from `/api/camera/snapshot.jpg`, 1280 x 720, captured 2026-10-12 13:14:19 UTC.
+`images/photos/controller-camera-2026-10-12.jpg`: one RGB frame from `/api/camera/snapshot.jpg`, 1280 x 720, captured 2026-10-12 13:14:19 UTC.
 
 | Setting | Value |
 |---------|-------|

@@ -17,7 +17,7 @@ cube size. Method in docs/tracking-plan.md:
 Coordinates are the camera table frame: mm, origin at the mat edge nearest the arm,
 +X away from the arm, +Y to the left seen from the arm, Z up.
 
-  .venv/Scripts/python vision/blocks.py docs/images/controller-camera-2026-10-12.jpg --out annotated.png
+  .venv/Scripts/python vision/blocks.py docs/images/photos/controller-camera-2026-10-12.jpg --out annotated.png
   .venv/Scripts/python vision/blocks.py --url http://10.102.4.103:8765 --every 5     (GET only)
 """
 import argparse, json, math, os, sys, time, urllib.request

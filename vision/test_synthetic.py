@@ -14,7 +14,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import blocks
 
-REAL_FRAME = os.path.join(blocks.REPO, "docs", "images", "controller-camera-2026-10-12.jpg")
+REAL_FRAME = os.path.join(blocks.REPO, "docs", "images", "photos", "controller-camera-2026-10-12.jpg")
 CELL_MM = 5.0   # 30 mm marker = 6 x 6 cells including the black border
 
 # (colour, rgba, x_mm, y_mm, level)

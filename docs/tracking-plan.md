@@ -110,7 +110,7 @@ Build stacks close to the arm, and use a short hover (about 2 cm) above level 1 
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install opencv-python          # once, next to mujoco and numpy
-.\.venv\Scripts\python.exe vision\blocks.py docs\images\controller-camera-2026-10-12.jpg --out annotated.png
+.\.venv\Scripts\python.exe vision\blocks.py docs\images\photos\controller-camera-2026-10-12.jpg --out annotated.png
 .\.venv\Scripts\python.exe vision\blocks.py --url http://10.102.4.103:8765 --every 5
 .\.venv\Scripts\python.exe vision\test_synthetic.py
 ```

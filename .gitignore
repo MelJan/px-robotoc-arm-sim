@@ -11,3 +11,9 @@ unreal/*/Saved/
 unreal/*/DerivedDataCache/
 unreal/*/.vs/
 unreal/*/*.sln
+
+# Third-party reference images (sources in docs/images/web/SOURCES.md); keep them local
+docs/images/web/*.jpg
+docs/images/web/*.jpeg
+docs/images/web/*.png
+docs/images/web/*.webp
