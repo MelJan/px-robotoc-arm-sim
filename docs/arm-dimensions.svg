@@ -158,134 +158,157 @@
 <line x1='790.0' y1='193.0' x2='790.0' y2='450.0' stroke='#8a94a6' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='5,5'/>
 <text x='790.0' y='470.0' font-size='10' fill='#8a94a6' text-anchor='middle' font-weight='normal' font-family='Helvetica, Arial, sans-serif'>arm reach direction (assumed)</text>
 <text x='30.0' y='554.0' font-size='15' fill='#1f2a44' text-anchor='start' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>3. Gripper S6 (drawn 2x, 1 cm = 20 px)</text>
-<text x='150.0' y='576.0' font-size='12' fill='#1f2a44' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>open</text>
-<rect x='130.0' y='586.0' width='40.0' height='14.0' rx='2' fill='#cfd5dd' stroke='#0f1115' stroke-width='1'/>
-<polygon points='92.0,600.0 208.0,600.0 214.0,622.0 200.0,648.0 100.0,648.0 86.0,622.0' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
-<circle cx='133.0' cy='626.0' r='16.0' fill='#30353d' stroke='#59606b' stroke-width='5.0' stroke-dasharray='3.6,2.8'/>
-<line x1='106.0' y1='636.0' x2='47.7' y2='674.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
-<line x1='106.0' y1='636.0' x2='47.7' y2='674.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
-<line x1='133.0' y1='626.0' x2='74.7' y2='664.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
-<line x1='133.0' y1='626.0' x2='74.7' y2='664.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
-<polygon points='74.7,664.7 47.7,674.7 49.7,732.7 92.7,799.7 99.7,798.7 99.7,768.7 84.7,726.7' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
-<rect x='99.7' y='774.0' width='5.3' height='24.0' rx='1' fill='#e9ecef' stroke='#8a94a6' stroke-width='0.8'/>
-<circle cx='133.0' cy='626.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='106.0' cy='636.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='74.7' cy='664.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='47.7' cy='674.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='167.0' cy='626.0' r='16.0' fill='#30353d' stroke='#59606b' stroke-width='5.0' stroke-dasharray='3.6,2.8'/>
-<line x1='194.0' y1='636.0' x2='252.3' y2='674.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
-<line x1='194.0' y1='636.0' x2='252.3' y2='674.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
-<line x1='167.0' y1='626.0' x2='225.3' y2='664.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
-<line x1='167.0' y1='626.0' x2='225.3' y2='664.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
-<polygon points='225.3,664.7 252.3,674.7 250.3,732.7 207.3,799.7 200.3,798.7 200.3,768.7 215.3,726.7' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
-<rect x='195.0' y='774.0' width='5.3' height='24.0' rx='1' fill='#e9ecef' stroke='#8a94a6' stroke-width='0.8'/>
-<circle cx='167.0' cy='626.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='194.0' cy='636.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='225.3' cy='664.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='252.3' cy='674.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='150.0' cy='638.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<line x1='262.0' y1='798.0' x2='270.0' y2='798.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
-<line x1='262.0' y1='598.0' x2='270.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
-<line x1='266.0' y1='798.0' x2='266.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<line x1='261.0' y1='798.0' x2='271.0' y2='798.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<line x1='261.0' y1='598.0' x2='271.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<text x='274.0' y='702.0' font-size='12' fill='#0a7d6b' text-anchor='start' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>10,0</text>
-<line x1='105.0' y1='810.0' x2='105.0' y2='828.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
-<line x1='195.0' y1='810.0' x2='195.0' y2='828.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
-<line x1='105.0' y1='824.0' x2='195.0' y2='824.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<line x1='105.0' y1='819.0' x2='105.0' y2='829.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<line x1='195.0' y1='819.0' x2='195.0' y2='829.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<text x='150.0' y='840.0' font-size='12' fill='#0a7d6b' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>4,5 gap</text>
-<line x1='115.0' y1='798.0' x2='119.0' y2='798.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
-<line x1='115.0' y1='774.0' x2='119.0' y2='774.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
-<line x1='115.0' y1='798.0' x2='115.0' y2='774.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<line x1='110.0' y1='798.0' x2='120.0' y2='798.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<line x1='110.0' y1='774.0' x2='120.0' y2='774.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<text x='123.0' y='790.0' font-size='12' fill='#0a7d6b' text-anchor='start' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>1,2 pad</text>
-<text x='420.0' y='576.0' font-size='12' fill='#1f2a44' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>closed</text>
-<rect x='400.0' y='586.0' width='40.0' height='14.0' rx='2' fill='#cfd5dd' stroke='#0f1115' stroke-width='1'/>
-<polygon points='362.0,600.0 478.0,600.0 484.0,622.0 470.0,648.0 370.0,648.0 356.0,622.0' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
-<circle cx='403.0' cy='626.0' r='16.0' fill='#30353d' stroke='#59606b' stroke-width='5.0' stroke-dasharray='3.6,2.8'/>
-<line x1='376.0' y1='636.0' x2='362.6' y2='704.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
-<line x1='376.0' y1='636.0' x2='362.6' y2='704.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
-<line x1='403.0' y1='626.0' x2='389.6' y2='694.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
-<line x1='403.0' y1='626.0' x2='389.6' y2='694.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
-<polygon points='389.6,694.7 362.6,704.7 364.6,762.7 407.6,829.7 414.6,828.7 414.6,798.7 399.6,756.7' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
-<rect x='414.6' y='804.0' width='5.3' height='24.0' rx='1' fill='#e9ecef' stroke='#8a94a6' stroke-width='0.8'/>
-<circle cx='403.0' cy='626.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='376.0' cy='636.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='389.6' cy='694.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='362.6' cy='704.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='437.0' cy='626.0' r='16.0' fill='#30353d' stroke='#59606b' stroke-width='5.0' stroke-dasharray='3.6,2.8'/>
-<line x1='464.0' y1='636.0' x2='477.4' y2='704.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
-<line x1='464.0' y1='636.0' x2='477.4' y2='704.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
-<line x1='437.0' y1='626.0' x2='450.4' y2='694.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
-<line x1='437.0' y1='626.0' x2='450.4' y2='694.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
-<polygon points='450.4,694.7 477.4,704.7 475.4,762.7 432.4,829.7 425.4,828.7 425.4,798.7 440.4,756.7' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
-<rect x='420.1' y='804.0' width='5.3' height='24.0' rx='1' fill='#e9ecef' stroke='#8a94a6' stroke-width='0.8'/>
-<circle cx='437.0' cy='626.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='464.0' cy='636.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='450.4' cy='694.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='477.4' cy='704.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='420.0' cy='638.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<line x1='504.0' y1='828.0' x2='512.0' y2='828.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
-<line x1='504.0' y1='598.0' x2='512.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
-<line x1='508.0' y1='828.0' x2='508.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<line x1='503.0' y1='828.0' x2='513.0' y2='828.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<line x1='503.0' y1='598.0' x2='513.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<text x='516.0' y='717.0' font-size='12' fill='#0a7d6b' text-anchor='start' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>11,5</text>
-<text x='420.0' y='850.0' font-size='12' fill='#0a7d6b' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>gap 0, pads touch</text>
-<rect x='633.5' y='791.5' width='53.0' height='53.0' rx='3' fill='#ee7a3a' stroke='#b4521f' stroke-width='1.5'/>
-<text x='660.0' y='576.0' font-size='12' fill='#1f2a44' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>holding block (11,0 = flange to block centre)</text>
-<rect x='640.0' y='586.0' width='40.0' height='14.0' rx='2' fill='#cfd5dd' stroke='#0f1115' stroke-width='1'/>
-<polygon points='602.0,600.0 718.0,600.0 724.0,622.0 710.0,648.0 610.0,648.0 596.0,622.0' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
-<circle cx='643.0' cy='626.0' r='16.0' fill='#30353d' stroke='#59606b' stroke-width='5.0' stroke-dasharray='3.6,2.8'/>
-<line x1='616.0' y1='636.0' x2='576.2' y2='693.6' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
-<line x1='616.0' y1='636.0' x2='576.2' y2='693.6' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
-<line x1='643.0' y1='626.0' x2='603.2' y2='683.6' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
-<line x1='643.0' y1='626.0' x2='603.2' y2='683.6' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
-<polygon points='603.2,683.6 576.2,693.6 578.2,751.6 621.2,818.6 628.2,817.6 628.2,787.6 613.2,745.6' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
-<rect x='628.2' y='792.9' width='5.3' height='24.0' rx='1' fill='#e9ecef' stroke='#8a94a6' stroke-width='0.8'/>
-<circle cx='643.0' cy='626.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='616.0' cy='636.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='603.2' cy='683.6' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='576.2' cy='693.6' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='677.0' cy='626.0' r='16.0' fill='#30353d' stroke='#59606b' stroke-width='5.0' stroke-dasharray='3.6,2.8'/>
-<line x1='704.0' y1='636.0' x2='743.8' y2='693.6' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
-<line x1='704.0' y1='636.0' x2='743.8' y2='693.6' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
-<line x1='677.0' y1='626.0' x2='716.8' y2='683.6' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
-<line x1='677.0' y1='626.0' x2='716.8' y2='683.6' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
-<polygon points='716.8,683.6 743.8,693.6 741.8,751.6 698.8,818.6 691.8,817.6 691.8,787.6 706.8,745.6' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
-<rect x='686.5' y='792.9' width='5.3' height='24.0' rx='1' fill='#e9ecef' stroke='#8a94a6' stroke-width='0.8'/>
-<circle cx='677.0' cy='626.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='704.0' cy='636.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='716.8' cy='683.6' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='743.8' cy='693.6' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='660.0' cy='638.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
-<circle cx='660.0' cy='818.0' r='3.0' fill='white' stroke='#b4521f' stroke-width='1'/>
-<line x1='752.0' y1='818.0' x2='760.0' y2='818.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
-<line x1='752.0' y1='598.0' x2='760.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
-<line x1='756.0' y1='818.0' x2='756.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<line x1='751.0' y1='818.0' x2='761.0' y2='818.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<line x1='751.0' y1='598.0' x2='761.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<text x='764.0' y='712.0' font-size='12' fill='#0a7d6b' text-anchor='start' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>11,0</text>
-<line x1='633.5' y1='850.5' x2='633.5' y2='868.5' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
-<line x1='686.5' y1='850.5' x2='686.5' y2='868.5' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
-<line x1='633.5' y1='864.5' x2='686.5' y2='864.5' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<line x1='633.5' y1='859.5' x2='633.5' y2='869.5' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<line x1='686.5' y1='859.5' x2='686.5' y2='869.5' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<text x='660.0' y='880.5' font-size='12' fill='#0a7d6b' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>2,65 block</text>
-<text x='840.0' y='554.0' font-size='15' fill='#1f2a44' text-anchor='start' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>4. Test cube</text>
-<polygon points='870,683.85 893.85,660 946.85,660 923.0,683.85' fill='#f39a63' stroke='#b4521f' stroke-width='1.5'/>
-<polygon points='923.0,683.85 946.85,660 946.85,713.0 923.0,736.85' fill='#c9622c' stroke='#b4521f' stroke-width='1.5'/>
-<rect x='870.0' y='683.9' width='53.0' height='53.0' rx='0' fill='#ee7a3a' stroke='#b4521f' stroke-width='1.5'/>
-<line x1='870.0' y1='736.9' x2='870.0' y2='748.9' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
-<line x1='923.0' y1='736.9' x2='923.0' y2='748.9' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
-<line x1='870.0' y1='752.9' x2='923.0' y2='752.9' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<line x1='870.0' y1='757.9' x2='870.0' y2='747.9' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<line x1='923.0' y1='757.9' x2='923.0' y2='747.9' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
-<text x='896.5' y='768.9' font-size='12' fill='#0a7d6b' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>2,65</text>
-<text x='906.5' y='788.9' font-size='11' fill='#8a94a6' text-anchor='middle' font-weight='normal' font-family='Helvetica, Arial, sans-serif'>all edges 2,65 (2x)</text>
+<text x='140.0' y='576.0' font-size='12' fill='#1f2a44' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>open</text>
+<rect x='120.0' y='586.0' width='40.0' height='14.0' rx='2' fill='#cfd5dd' stroke='#0f1115' stroke-width='1'/>
+<polygon points='82.0,600.0 198.0,600.0 204.0,622.0 190.0,648.0 90.0,648.0 76.0,622.0' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
+<circle cx='123.0' cy='626.0' r='16.0' fill='#30353d' stroke='#59606b' stroke-width='5.0' stroke-dasharray='3.6,2.8'/>
+<line x1='96.0' y1='636.0' x2='37.7' y2='674.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
+<line x1='96.0' y1='636.0' x2='37.7' y2='674.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
+<line x1='123.0' y1='626.0' x2='64.7' y2='664.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
+<line x1='123.0' y1='626.0' x2='64.7' y2='664.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
+<polygon points='64.7,664.7 37.7,674.7 39.7,732.7 82.7,799.7 89.7,798.7 89.7,768.7 74.7,726.7' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
+<rect x='89.7' y='774.0' width='5.3' height='24.0' rx='1' fill='#e9ecef' stroke='#8a94a6' stroke-width='0.8'/>
+<circle cx='123.0' cy='626.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='96.0' cy='636.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='64.7' cy='664.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='37.7' cy='674.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='157.0' cy='626.0' r='16.0' fill='#30353d' stroke='#59606b' stroke-width='5.0' stroke-dasharray='3.6,2.8'/>
+<line x1='184.0' y1='636.0' x2='242.3' y2='674.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
+<line x1='184.0' y1='636.0' x2='242.3' y2='674.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
+<line x1='157.0' y1='626.0' x2='215.3' y2='664.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
+<line x1='157.0' y1='626.0' x2='215.3' y2='664.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
+<polygon points='215.3,664.7 242.3,674.7 240.3,732.7 197.3,799.7 190.3,798.7 190.3,768.7 205.3,726.7' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
+<rect x='185.0' y='774.0' width='5.3' height='24.0' rx='1' fill='#e9ecef' stroke='#8a94a6' stroke-width='0.8'/>
+<circle cx='157.0' cy='626.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='184.0' cy='636.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='215.3' cy='664.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='242.3' cy='674.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='140.0' cy='638.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<line x1='252.0' y1='798.0' x2='260.0' y2='798.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='252.0' y1='598.0' x2='260.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='256.0' y1='798.0' x2='256.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='251.0' y1='798.0' x2='261.0' y2='798.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='251.0' y1='598.0' x2='261.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<text x='264.0' y='702.0' font-size='12' fill='#0a7d6b' text-anchor='start' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>10,0</text>
+<line x1='95.0' y1='810.0' x2='95.0' y2='828.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='185.0' y1='810.0' x2='185.0' y2='828.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='95.0' y1='824.0' x2='185.0' y2='824.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='95.0' y1='819.0' x2='95.0' y2='829.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='185.0' y1='819.0' x2='185.0' y2='829.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<text x='140.0' y='840.0' font-size='12' fill='#0a7d6b' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>4,5 gap</text>
+<line x1='105.0' y1='798.0' x2='109.0' y2='798.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='105.0' y1='774.0' x2='109.0' y2='774.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='105.0' y1='798.0' x2='105.0' y2='774.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='100.0' y1='798.0' x2='110.0' y2='798.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='100.0' y1='774.0' x2='110.0' y2='774.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<text x='113.0' y='790.0' font-size='12' fill='#0a7d6b' text-anchor='start' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>1,2 pad</text>
+<text x='390.0' y='576.0' font-size='12' fill='#1f2a44' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>closed</text>
+<rect x='370.0' y='586.0' width='40.0' height='14.0' rx='2' fill='#cfd5dd' stroke='#0f1115' stroke-width='1'/>
+<polygon points='332.0,600.0 448.0,600.0 454.0,622.0 440.0,648.0 340.0,648.0 326.0,622.0' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
+<circle cx='373.0' cy='626.0' r='16.0' fill='#30353d' stroke='#59606b' stroke-width='5.0' stroke-dasharray='3.6,2.8'/>
+<line x1='346.0' y1='636.0' x2='332.6' y2='704.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
+<line x1='346.0' y1='636.0' x2='332.6' y2='704.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
+<line x1='373.0' y1='626.0' x2='359.6' y2='694.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
+<line x1='373.0' y1='626.0' x2='359.6' y2='694.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
+<polygon points='359.6,694.7 332.6,704.7 334.6,762.7 377.6,829.7 384.6,828.7 384.6,798.7 369.6,756.7' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
+<rect x='384.6' y='804.0' width='5.3' height='24.0' rx='1' fill='#e9ecef' stroke='#8a94a6' stroke-width='0.8'/>
+<circle cx='373.0' cy='626.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='346.0' cy='636.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='359.6' cy='694.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='332.6' cy='704.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='407.0' cy='626.0' r='16.0' fill='#30353d' stroke='#59606b' stroke-width='5.0' stroke-dasharray='3.6,2.8'/>
+<line x1='434.0' y1='636.0' x2='447.4' y2='704.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
+<line x1='434.0' y1='636.0' x2='447.4' y2='704.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
+<line x1='407.0' y1='626.0' x2='420.4' y2='694.7' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
+<line x1='407.0' y1='626.0' x2='420.4' y2='694.7' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
+<polygon points='420.4,694.7 447.4,704.7 445.4,762.7 402.4,829.7 395.4,828.7 395.4,798.7 410.4,756.7' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
+<rect x='390.1' y='804.0' width='5.3' height='24.0' rx='1' fill='#e9ecef' stroke='#8a94a6' stroke-width='0.8'/>
+<circle cx='407.0' cy='626.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='434.0' cy='636.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='420.4' cy='694.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='447.4' cy='704.7' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='390.0' cy='638.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<line x1='474.0' y1='828.0' x2='482.0' y2='828.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='474.0' y1='598.0' x2='482.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='478.0' y1='828.0' x2='478.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='473.0' y1='828.0' x2='483.0' y2='828.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='473.0' y1='598.0' x2='483.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<text x='486.0' y='717.0' font-size='12' fill='#0a7d6b' text-anchor='start' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>11,5</text>
+<text x='390.0' y='850.0' font-size='12' fill='#0a7d6b' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>gap 0, pads touch</text>
+<rect x='593.5' y='791.5' width='53.0' height='53.0' rx='3' fill='#ee7a3a' stroke='#b4521f' stroke-width='1.5'/>
+<text x='620.0' y='576.0' font-size='12' fill='#1f2a44' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>holding block (11,0 = flange to block centre)</text>
+<rect x='600.0' y='586.0' width='40.0' height='14.0' rx='2' fill='#cfd5dd' stroke='#0f1115' stroke-width='1'/>
+<polygon points='562.0,600.0 678.0,600.0 684.0,622.0 670.0,648.0 570.0,648.0 556.0,622.0' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
+<circle cx='603.0' cy='626.0' r='16.0' fill='#30353d' stroke='#59606b' stroke-width='5.0' stroke-dasharray='3.6,2.8'/>
+<line x1='576.0' y1='636.0' x2='536.2' y2='693.6' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
+<line x1='576.0' y1='636.0' x2='536.2' y2='693.6' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
+<line x1='603.0' y1='626.0' x2='563.2' y2='683.6' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
+<line x1='603.0' y1='626.0' x2='563.2' y2='683.6' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
+<polygon points='563.2,683.6 536.2,693.6 538.2,751.6 581.2,818.6 588.2,817.6 588.2,787.6 573.2,745.6' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
+<rect x='588.2' y='792.9' width='5.3' height='24.0' rx='1' fill='#e9ecef' stroke='#8a94a6' stroke-width='0.8'/>
+<circle cx='603.0' cy='626.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='576.0' cy='636.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='563.2' cy='683.6' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='536.2' cy='693.6' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='637.0' cy='626.0' r='16.0' fill='#30353d' stroke='#59606b' stroke-width='5.0' stroke-dasharray='3.6,2.8'/>
+<line x1='664.0' y1='636.0' x2='703.8' y2='693.6' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
+<line x1='664.0' y1='636.0' x2='703.8' y2='693.6' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
+<line x1='637.0' y1='626.0' x2='676.8' y2='683.6' stroke='#0f1115' stroke-width='12.4' stroke-linecap='round'/>
+<line x1='637.0' y1='626.0' x2='676.8' y2='683.6' stroke='#24282f' stroke-width='10.0' stroke-linecap='round'/>
+<polygon points='676.8,683.6 703.8,693.6 701.8,751.6 658.8,818.6 651.8,817.6 651.8,787.6 666.8,745.6' fill='#24282f' stroke='#0f1115' stroke-width='1.2' stroke-linejoin='round'/>
+<rect x='646.5' y='792.9' width='5.3' height='24.0' rx='1' fill='#e9ecef' stroke='#8a94a6' stroke-width='0.8'/>
+<circle cx='637.0' cy='626.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='664.0' cy='636.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='676.8' cy='683.6' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='703.8' cy='693.6' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='620.0' cy='638.0' r='4.0' fill='#b9c0ca' stroke='#6b7380' stroke-width='0.8'/>
+<circle cx='620.0' cy='818.0' r='3.0' fill='white' stroke='#b4521f' stroke-width='1'/>
+<line x1='712.0' y1='818.0' x2='720.0' y2='818.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='712.0' y1='598.0' x2='720.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='716.0' y1='818.0' x2='716.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='711.0' y1='818.0' x2='721.0' y2='818.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='711.0' y1='598.0' x2='721.0' y2='598.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<text x='724.0' y='712.0' font-size='12' fill='#0a7d6b' text-anchor='start' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>11,0</text>
+<line x1='593.5' y1='850.5' x2='593.5' y2='868.5' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='646.5' y1='850.5' x2='646.5' y2='868.5' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='593.5' y1='864.5' x2='646.5' y2='864.5' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='593.5' y1='859.5' x2='593.5' y2='869.5' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='646.5' y1='859.5' x2='646.5' y2='869.5' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<text x='620.0' y='880.5' font-size='12' fill='#0a7d6b' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>2,65 block</text>
+<text x='790.0' y='554.0' font-size='15' fill='#1f2a44' text-anchor='start' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>4. Test objects (2x)</text>
+<polygon points='830,648.85 853.85,625 906.85,625 883.0,648.85' fill='#f39a63' stroke='#b4521f' stroke-width='1.5'/>
+<polygon points='883.0,648.85 906.85,625 906.85,678.0 883.0,701.85' fill='#c9622c' stroke='#b4521f' stroke-width='1.5'/>
+<rect x='830.0' y='648.9' width='53.0' height='53.0' rx='0' fill='#ee7a3a' stroke='#b4521f' stroke-width='1.5'/>
+<line x1='830.0' y1='701.9' x2='830.0' y2='713.9' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='883.0' y1='701.9' x2='883.0' y2='713.9' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='830.0' y1='717.9' x2='883.0' y2='717.9' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='830.0' y1='722.9' x2='830.0' y2='712.9' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='883.0' y1='722.9' x2='883.0' y2='712.9' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<text x='856.5' y='733.9' font-size='12' fill='#0a7d6b' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>2,65</text>
+<text x='914.9' y='675.4' font-size='11' fill='#8a94a6' text-anchor='start' font-weight='normal' font-family='Helvetica, Arial, sans-serif'>cube</text>
+<text x='914.9' y='688.4' font-size='11' fill='#8a94a6' text-anchor='start' font-weight='normal' font-family='Helvetica, Arial, sans-serif'>all edges</text>
+<text x='914.9' y='701.4' font-size='11' fill='#8a94a6' text-anchor='start' font-weight='normal' font-family='Helvetica, Arial, sans-serif'>2,65</text>
+<path d='M 805.0 838.0 A 60.1 60.1 0 0 1 925.0 838.0 Z' fill='#d63a3a' stroke='#8f1f1f' stroke-width='1.5'/>
+<line x1='805.0' y1='842.0' x2='805.0' y2='854.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='925.0' y1='842.0' x2='925.0' y2='854.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='805.0' y1='858.0' x2='925.0' y2='858.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='805.0' y1='863.0' x2='805.0' y2='853.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='925.0' y1='863.0' x2='925.0' y2='853.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<text x='865.0' y='874.0' font-size='12' fill='#0a7d6b' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>6,0</text>
+<line x1='805.0' y1='838.0' x2='801.0' y2='838.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='805.0' y1='782.0' x2='801.0' y2='782.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='805.0' y1='838.0' x2='805.0' y2='782.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='810.0' y1='838.0' x2='800.0' y2='838.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='810.0' y1='782.0' x2='800.0' y2='782.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<text x='797.0' y='814.0' font-size='12' fill='#0a7d6b' text-anchor='end' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>2,8</text>
+<rect x='943.0' y='782.0' width='24.0' height='56.0' rx='0' fill='#b52e2e' stroke='#8f1f1f' stroke-width='1.5'/>
+<line x1='943.0' y1='842.0' x2='943.0' y2='854.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='967.0' y1='842.0' x2='967.0' y2='854.0' stroke='#0a7d6b' stroke-width='1.0' stroke-linecap='round'/>
+<line x1='943.0' y1='858.0' x2='967.0' y2='858.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='943.0' y1='863.0' x2='943.0' y2='853.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<line x1='967.0' y1='863.0' x2='967.0' y2='853.0' stroke='#0a7d6b' stroke-width='1.5' stroke-linecap='round'/>
+<text x='955.0' y='874.0' font-size='12' fill='#0a7d6b' text-anchor='middle' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>1,2</text>
+<text x='865.0' y='772.0' font-size='11' fill='#8a94a6' text-anchor='middle' font-weight='normal' font-family='Helvetica, Arial, sans-serif'>red half-round block (front, side)</text>
 <text x='30.0' y='900.0' font-size='15' fill='#1f2a44' text-anchor='start' font-weight='bold' font-family='Helvetica, Arial, sans-serif'>Kinematic chain (distances between joint axes, cm)</text>
 <circle cx='60.0' cy='940.0' r='8.0' fill='white' stroke='#1f2a44' stroke-width='2.5'/>
 <text x='60.0' y='966.0' font-size='11' fill='#1f2a44' text-anchor='middle' font-weight='normal' font-family='Helvetica, Arial, sans-serif'>S1 base</text>

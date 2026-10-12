@@ -1,4 +1,4 @@
-"""Generates docs/images/arm-dimensions.svg. Run: python3 make_arm_dimensions_svg.py
+"""Generates docs/arm-dimensions.svg. Run: python3 make_arm_dimensions_svg.py
 
 Measured values are at the top. Servo bodies, brackets and the gripper outline follow the
 photos and the app screenshot; only the dimensioned distances are measured.
@@ -18,14 +18,15 @@ FONT = "font-family='Helvetica, Arial, sans-serif'"
 BOARD_W, BOARD_D = 30.0, 38.0
 AXIS_TO_EDGE = 1.5          # S1 axis to back edge of the board
 H_S2 = 9.6                  # board top to S2 axis (whiteboard)
-L_S2_S3 = 10.5              # team correction (Bild (3) showed 10,0)
-L_S3_S4 = 12.6              # Bild (3)
+L_S2_S3 = 10.5              # team correction (Full_arm_stretched.png showed 10,0)
+L_S3_S4 = 12.6              # images/Full_arm_stretched.png
 L_S4_S5 = 6.7               # S4 horn to gripper flange, team correction (whiteboard 6,7)
 G_OPEN_H, G_OPEN_GAP = 10.0, 4.5     # flange to finger tips / gap between pads, open
 G_CLOSED_H, G_CLOSED_GAP = 11.5, 0.0 # closed, pads touch
 G_BLOCK_H = 11.0                     # flange to block centre while holding the block
 PAD_H = 1.2                          # height of the rubber pads on the finger tips
 CUBE = BLOCK = 2.65
+HALF_W, HALF_H, HALF_D = 6.0, 2.8, 1.2   # red half-round block, flat side down
 
 # ---------------- primitives ----------------
 def line(x1,y1,x2,y2,stroke=INK,w=2,dash=None,cap="round"):
@@ -215,16 +216,16 @@ text(30,gy0-44,"3. Gripper S6 (drawn 2x, 1 cm = 20 px)",15,INK,"start","bold")
 def gripper_view(cx, theta, title):
     text(cx, gy0-22, title, 12, INK, "middle", "bold")
     return claw(cx, gy0, GS, theta)
-c1 = 150
+c1 = 140
 t = gripper_view(c1, TH_OPEN, "open")
 dim(c1+5.6*GS, gy0+G_OPEN_H*GS, c1+5.6*GS, gy0, "10,0", 4)
 dim(t[0][0], t[0][1]+12, t[1][0], t[1][1]+12, "4,5 gap", 14, DIM, False)
 dim(t[0][0]+0.5*GS, t[0][1], t[0][0]+0.5*GS, t[0][1]-PAD_H*GS, "1,2 pad", 0, DIM, False)
-c2 = 420
+c2 = 390
 t = gripper_view(c2, TH_CLOSED, "closed")
 dim(c2+4.2*GS, gy0+G_CLOSED_H*GS, c2+4.2*GS, gy0, "11,5", 4)
 text(c2, t[0][1]+22, "gap 0, pads touch", 12, DIM, "middle", "bold")
-c3 = 660
+c3 = 620
 bx = c3 - BLOCK/2*GS; byc = gy0 + G_BLOCK_H*GS
 rect(bx, byc-BLOCK/2*GS, BLOCK*GS, BLOCK*GS, "#ee7a3a", "#b4521f", 1.5, rx=3)
 t = gripper_view(c3, TH_BLOCK, "holding block (11,0 = flange to block centre)")
@@ -232,15 +233,28 @@ circle(c3, byc, 3, "white", "#b4521f", 1)
 dim(c3+4.6*GS, byc, c3+4.6*GS, gy0, "11,0", 4)
 dim(bx, byc+BLOCK/2*GS+6, bx+BLOCK*GS, byc+BLOCK/2*GS+6, "2,65 block", 14, DIM, False)
 
-# ---------------- Panel 4: cube (2x scale) ----------------
-qx, qy = 870, 660
-text(qx-30,gy0-44,"4. Test cube",15,INK,"start","bold")
+# ---------------- Panel 4: test objects (2x scale) ----------------
+qx, qy = 830, 625
+text(790,gy0-44,"4. Test objects (2x)",15,INK,"start","bold")
 e = CUBE*GS; d = e*0.45
 add(f"<polygon points='{qx},{qy+d} {qx+d},{qy} {qx+e+d},{qy} {qx+e},{qy+d}' fill='#f39a63' stroke='#b4521f' stroke-width='1.5'/>")
 add(f"<polygon points='{qx+e},{qy+d} {qx+e+d},{qy} {qx+e+d},{qy+e} {qx+e},{qy+d+e}' fill='#c9622c' stroke='#b4521f' stroke-width='1.5'/>")
 rect(qx,qy+d,e,e,"#ee7a3a","#b4521f",1.5)
 dim(qx,qy+d+e,qx+e,qy+d+e,"2,65",-16,DIM,True)
-text(qx+e/2+10, qy+d+e+52, "all edges 2,65 (2x)", 11, GREY)
+text(qx+e+d+8, qy+d+e/2, "cube", 11, GREY, "start"); text(qx+e+d+8, qy+d+e/2+13, "all edges", 11, GREY, "start")
+text(qx+e+d+8, qy+d+e/2+26, "2,65", 11, GREY, "start")
+# red half-round block: circular segment, chord HALF_W, height HALF_H
+R_HALF = (HALF_W**2/4 + HALF_H**2) / (2*HALF_H)
+hx, hy = 805, 838                       # left end of the flat bottom edge
+hw, hh, hd = HALF_W*GS, HALF_H*GS, HALF_D*GS
+add(f"<path d='M {hx:.1f} {hy:.1f} A {R_HALF*GS:.1f} {R_HALF*GS:.1f} 0 0 1 {hx+hw:.1f} {hy:.1f} Z' "
+    f"fill='#d63a3a' stroke='#8f1f1f' stroke-width='1.5'/>")
+dim(hx, hy+4, hx+hw, hy+4, "6,0", -16, DIM, True)
+dim(hx, hy, hx, hy-hh, "2,8", 0, DIM, True)
+sx = hx+hw+18                            # side view of the same block
+rect(sx, hy-hh, hd, hh, "#b52e2e", "#8f1f1f", 1.5)
+dim(sx, hy+4, sx+hd, hy+4, "1,2", -16, DIM, True)
+text(hx+hw/2, hy-hh-10, "red half-round block (front, side)", 11, GREY)
 
 # ---------------- chain summary ----------------
 sy = 900

@@ -1,6 +1,6 @@
 # Servo calibration notes
 
-Transcribed from the handwritten sheet in docs/images/Image.jpeg and corrected by hand.
+Transcribed from the handwritten sheet in docs/images/tick_measurement.jpeg and corrected by hand.
 All values are servo ticks. Direction (which sign is "up", "left", "open") is not yet
 recorded; see the open questions at the bottom.
 
