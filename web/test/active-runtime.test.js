@@ -20,6 +20,12 @@ test('active preserved UI is wired to the canonical planning, Rapier and operati
   assert.match(app, /runtimeSpec/);
 });
 
+test('only one application shell remains after the runtime consolidation', () => {
+  assert.equal(fs.existsSync(fileURLToPath(new URL('../src/main.js', import.meta.url))), false);
+  assert.equal(fs.existsSync(fileURLToPath(new URL('../src/style.css', import.meta.url))), false);
+  assert.match(webFile('index.html'), /href="style\.css"/);
+});
+
 test('millimetre runtime FK follows the preserved photo-fitted visual hierarchy', () => {
   const canonical = configureCanonicalSpec(loadSpec());
   const servos = structuredClone(SERVOS);

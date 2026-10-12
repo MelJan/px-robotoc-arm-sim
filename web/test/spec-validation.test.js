@@ -1,0 +1,32 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { validateArmSpec } from '../src/config/spec.js';
+import { pathCost, planReferenceTransition } from '../src/core/planning.js';
+import { referencePose } from '../src/core/kinematics.js';
+import { loadSpec } from './helpers.js';
+
+test('schema rejects unit drift and loss of provenance', () => {
+  const wrongUnits = structuredClone(loadSpec()); wrongUnits.metadata.units = 'centimetres';
+  assert.throws(() => validateArmSpec(wrongUnits), /metadata.units/);
+  const promotedBounds = structuredClone(loadSpec()); promotedBounds.joints[0].boundsStatus = 'safe';
+  assert.throws(() => validateArmSpec(promotedBounds), /historical-unvalidated provenance/);
+});
+
+test('schema rejects reference poses outside historical bounds', () => {
+  const spec = structuredClone(loadSpec()); spec.joints[3].park = spec.joints[3].max + 1;
+  assert.throws(() => validateArmSpec(spec), /reference counts must be inside/);
+});
+
+test('reference planning is deterministic for a fixed specification seed', () => {
+  const spec = loadSpec(); const home = referencePose(spec, 'home');
+  const first = planReferenceTransition(spec, home, 'park');
+  const second = planReferenceTransition(spec, home, 'park');
+  assert.equal(first.success, true);
+  assert.deepEqual(first.path, second.path);
+  assert.equal(pathCost(spec, first.path), pathCost(spec, second.path));
+});
+
+test('motion cost prefers no movement over a needless servo adjustment', () => {
+  const spec = loadSpec(); const home = referencePose(spec, 'home');
+  assert.ok(pathCost(spec, [home]) < pathCost(spec, [home, { ...home, S1: home.S1 + 20 }]));
+});

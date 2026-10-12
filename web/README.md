@@ -92,16 +92,44 @@ The optional adapter targets the existing `lutich/robot-arm` FastAPI contract:
 - `POST /api/power_off` to return to PARK and disable outputs; and
 - `POST /api/stop` for an emergency stop.
 
-The hardware backend requires POST requests to originate from the same origin.
-Therefore a Vite page on another port cannot control it. The production app
-must be served by, or reverse-proxied through, the robot backend before the
-connected modes can work. The UI validates that `/api/state` is a real robot
-state document and never falls through to Vite's HTML page.
+### Connection commands
+
+Build before running the production gateway:
+
+| Purpose | Command | POST policy |
+| --- | --- | --- |
+| Simulation only | `npm run serve` | no controller configured |
+| Inspect real state | `npm run serve -- --controller http://ROBOT_HOST:8765` | only `/api/stop` passes |
+| Attended operation | `npm run serve -- --controller http://ROBOT_HOST:8765 --allow-motion` | only stop, power and single-joint move routes pass |
+
+The gateway binds to `127.0.0.1:8770` by default. Use `--host` and `--port` only
+when required. `GET /connection-info` reports the active gateway policy without
+contacting the controller.
+
+The controller requires same-origin POSTs. `server.mjs` supplies that boundary
+and keeps motion disabled unless `--allow-motion` is present. The browser still
+requires: read-only connection → operational/disarmed selection → fresh PARK
+confirmation → arming. Starting the gateway never connects, powers or moves the
+arm.
+
+The client rejects malformed or non-JSON state, requires six channels, polls
+connection health after an explicit connection, validates targets against the
+backend session bounds, confirms every commanded count and attempts `/api/stop`
+if operational playback fails.
 
 The physical arm has no position feedback. Connected values are always labelled
 as **commanded pose**, never measured pose. Operational execution additionally
 requires an exact match between the plan's first waypoint and the backend's six
 held commands. Server-side bounds and guards remain authoritative.
+
+### Operator checklist
+
+1. Keep a person at the physical power switch and clear the workspace.
+2. Start the gateway without `--allow-motion`; verify read-only state first.
+3. Restart with `--allow-motion` only for an attended test.
+4. Confirm the physical arm is supported in PARK before arming.
+5. Re-plan whenever backend commanded counts or the scene change.
+6. Use the physical power switch if browser stop cannot be confirmed.
 
 ## Specification status
 

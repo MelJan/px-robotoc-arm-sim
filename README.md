@@ -38,6 +38,14 @@ Open the URL printed by Vite. Build the production site with:
 npm run build
 ```
 
+For a same-origin, read-only robot connection, build first and use the guarded
+gateway. Motion forwarding needs the separate explicit flag:
+
+```sh
+npm run serve -- --controller http://ROBOT_HOST:8765
+npm run serve -- --controller http://ROBOT_HOST:8765 --allow-motion
+```
+
 The build succeeds with a non-fatal large-chunk warning for Three.js and the
 separate embedded Rapier WebAssembly runtime.
 
@@ -50,8 +58,10 @@ separate embedded Rapier WebAssembly runtime.
 | `web/js/advanced.js` | canonical-mm adapter for the preserved visual calibration |
 | `web/src/core/` | pure kinematics, collision, planning, playback and physics adapters |
 | `web/src/operational/client.js` | guarded same-origin robot API state machine |
+| `web/src/operational/gateway.js` | allowlist policy for proxied robot routes |
+| `web/server.mjs` | production static server and read-only-by-default API gateway |
 | `web/public/arm-spec.json` | millimetre model, planner settings and provenance |
-| `web/test/` | automated model/planner/physics/safety tests |
+| `web/test/` | 27 model, planner, physics, connection and safety tests |
 | `web/README.md` | usage and operational-mode guide |
 | `docs/threejs-implementation.md` | detailed design and validation status |
 

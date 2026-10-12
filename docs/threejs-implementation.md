@@ -57,6 +57,8 @@ src/core/planning.js                tasks, costs, search and path conversion
 src/core/controller.js              smooth virtual trajectory playback
 src/core/physics.js                 lazy Rapier3D world adapter
 src/operational/client.js           guarded robot API/state-machine adapter
+src/operational/gateway.js          proxy endpoint allowlist
+server.mjs                          production assets + guarded same-origin proxy
 public/arm-spec.json                versioned millimetre specification
 test/*.test.js                      Node test suite
 ```
@@ -71,6 +73,10 @@ metadata are not scaled.
 Rapier is dynamically imported. This keeps its embedded WebAssembly runtime in
 a separate build chunk and allows the UI/core planner to remain independently
 loadable.
+
+There is one application shell: `index.html`, `style.css` and `js/app.js`.
+The superseded `src/main.js`/`src/style.css` shell was removed; `src/core` and
+`src/operational` remain because the active shell imports them directly.
 
 ## 3. Units and coordinates
 
@@ -125,6 +131,13 @@ outlines. It includes:
 
 The cosmetic detail is photo-informed, not surveyed CAD. It does not silently
 replace the measured joint-origin translations.
+
+| Evidence | Useful for | Not proof of |
+| --- | --- | --- |
+| Mat-calibrated photo overlay | pose, camera and gross link alignment | safe clearance or exact part dimensions |
+| Dimensioned drawing | bracket and link dimensions | assembled tolerances or cable envelope |
+| Close-up photograph | part presence, orientation and cable routing | metric scale without a reference |
+| Collision test | implemented envelope behaviour | real safety without surveyed geometry |
 
 The visualization is the preserved `codex/threejs-unified` presentation: dark
 split-pane desktop layout, resizable control panel, Perspective/Top/Side/OAK
@@ -258,20 +271,26 @@ selection, which avoids conflating dynamics with search.
 
 ## 11. Operational API boundary
 
-The adapter matches the existing FastAPI routes and its same-origin rule. A
-standalone Vite origin is intentionally insufficient for real operation. The
-app checks that `GET /api/state` contains a mode, joint list and command map;
-Vite's HTML history fallback is rejected instead of being mistaken for a robot
-connection.
+The adapter matches the existing FastAPI routes and its same-origin rule.
+`server.mjs` serves the built application and proxies a deliberately small
+allowlist. Without `--allow-motion`, only `GET /api/state` and emergency
+`POST /api/stop` pass. With the flag, power-on, power-off and single-joint move
+are additionally available. Starting the server or opening the page performs
+no controller request.
 
-Operational execution sends only a verified single-servo sequence. It polls
-until the backend reports idle after every request. Any backend error stops the
-sequence. Emergency stop calls `/api/stop`; if that call cannot be confirmed,
-the UI tells the operator to use the physical servo power switch.
+The app rejects HTML fallbacks, malformed state, missing channels and
+non-integer commands. After explicit connection it polls state every 1.5 s.
+Targets must fit the backend's current per-joint session bounds, every move must
+change exactly one servo, the starting commanded pose must match the plan and
+the backend must confirm each target.
+
+Operational execution waits for idle after every request. A move failure
+attempts `/api/stop` and puts the client in `fault-stopped`; an unconfirmed
+browser stop still requires the physical servo power switch.
 
 ## 12. Validation
 
-`npm test` currently covers:
+`npm test` runs 27 tests covering:
 
 - schema units, fixture height, provenance and physical HOME S6;
 - linear/anchored count conversion, deterministic FK and reachable IK;
@@ -279,7 +298,10 @@ the UI tells the operator to use the physical servo power switch.
 - verified HOME-to-PARK planning;
 - single-servo playback conversion;
 - text task parsing;
-- read-only/no-POST and explicit-PARK operational guards; and
+- strict robot-state parsing and explicit-PARK operational guards;
+- gateway read-only/motion allowlists;
+- backend bounds, single-servo paths, command confirmation and stop-on-failure;
+- schema failure cases, deterministic planning and motion-cost ordering; and
 - Rapier world/collider initialization.
 
 Manual browser validation covers task planning/playback, cube grasp/drop,

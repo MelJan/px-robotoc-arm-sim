@@ -416,7 +416,7 @@ $('power-on').onclick = () => {
 $('estop').onclick = async () => {
   demo.stop();
   ctl.stop('emergency stop button');
-  if (robotClient.mode === 'operational-armed') {
+  if (robotClient.connected || robotClient.mode === 'fault-stopped') {
     try { await robotClient.emergencyStop(); } catch (e) { log(`robot stop: ${e.message}`, 'err'); }
   }
 };
@@ -623,10 +623,13 @@ renderCal();
 // ---------------- guarded virtual / operational modes ----------------
 
 const operatingModeStatus = $('operating-mode-status');
-const backendCounts = (state) => SERVOS.map((_servo, index) => Number(state?.commands?.[index]));
+const backendCounts = (state) => SERVOS.map((_servo, index) => {
+  const value = state?.commands?.[index] ?? state?.commands?.[String(index)];
+  return Number.isInteger(value) ? value : null;
+});
 function mirrorBackendState(state) {
   const counts = backendCounts(state);
-  if (counts.every(Number.isFinite)) {
+  if (counts.every(Number.isInteger)) {
     ctl.setCommands(counts);
     moveVisualS5Offset(0, 0.4);
     needsRender = true;
@@ -651,6 +654,14 @@ function renderOperatingMode(message = null) {
 }
 
 robotClient.addEventListener('modechange', () => renderOperatingMode());
+robotClient.addEventListener('statechange', (event) => {
+  mirrorBackendState(event.detail.state);
+  renderOperatingMode(`Connected to ${event.detail.state.mode}; commanded pose updated${event.detail.state.busy ? ' · motion in progress' : ''}.`);
+});
+robotClient.addEventListener('connectionerror', (event) => {
+  renderOperatingMode(`Connection lost: ${event.detail.error.message}`);
+  log(`Robot API connection lost: ${event.detail.error.message}`, 'err');
+});
 $('park-confirm').onchange = () => renderOperatingMode();
 $('connect-mode').onclick = async () => {
   try {
@@ -664,6 +675,7 @@ $('connect-mode').onclick = async () => {
     if (robotClient.mode !== 'connected-read-only') await robotClient.connectReadOnly();
     mirrorBackendState(robotClient.state);
     if (requested === 'operational-disarmed') robotClient.enterOperationalDisarmed();
+    robotClient.startPolling();
     renderOperatingMode();
   } catch (error) {
     renderOperatingMode(error.message);
