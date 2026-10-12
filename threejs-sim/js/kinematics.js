@@ -1,6 +1,6 @@
 // Forward and inverse kinematics, counts <-> angles, gripper linkage.
 // Pure math, no three.js, so node can test it (web/test/).
-// Angles follow sim/arm.xml: 0 = all links straight up; positive S1 turns +Y toward +X;
+// Model angles: 0 = all links straight up; positive S1 turns +Y toward +X;
 // positive S2, S3, S4 tilt the arm toward +Y; S5 turns around the link axis.
 
 import { ARM, CUBE, GRIPPER, SERVOS } from './config.js';

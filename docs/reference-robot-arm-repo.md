@@ -117,5 +117,5 @@ Both frames are right-handed with Z up.
 ## 4. What the repo does not have
 
 - No measured joint angles, angle zeros or link lengths. Ours are in `arm-dimensions.md` and `servo-calibration.md`.
-- No inverse kinematics or XYZ control. Ours is in `sim/ik.py`.
-- No physics simulation. Ours is in `sim/`.
+- No inverse kinematics or XYZ control. Ours is in `threejs-sim/js/kinematics.js`.
+- No physics simulation. Ours is in `threejs-sim/` (`js/physics.js`, `js/world.js`).

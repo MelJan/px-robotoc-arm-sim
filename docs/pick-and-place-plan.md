@@ -122,7 +122,7 @@ Cube at (5, 15), grasp height, no hover:
 
 A forward check with these angles puts the wrist at r = 15,81, z = 19,025, and the cube centre at z = 1,325, as intended.
 
-The formulas are implemented in `sim/ik.py` and checked against the MuJoCo model in `sim/check_ik.py`, see section 8.
+The formulas are implemented in `threejs-sim/js/kinematics.js` (`ikTopDown`) and checked by `threejs-sim/test/core.test.mjs`, see section 8.
 
 ## 4. Motion sequence
 
@@ -217,11 +217,10 @@ These have to be answered first, most of them are already listed in `servo-calib
 
 ## 8. Check in simulation
 
-`sim/` holds a MuJoCo model of the arm (`sim/arm.xml`) built from `arm-dimensions.md`, and the IK from section 3 (`sim/ik.py`).
-Setup and commands are in `sim/README.md`.
-
-`sim/check_ik.py` sets the computed joint angles in the model and checks where the gripper ends up.
-For every reachable test position, the cube-centre point of the gripper lands on the target to within rounding (below 1e-14 cm), the gripper points straight down, and the jaws are parallel to the cube faces.
+The simulator in `threejs-sim/` contains the IK from section 3 (`js/kinematics.js`) and a model of the arm built from `arm-dimensions.md`.
+Its tests (`node --test threejs-sim/test/*.test.mjs`) set the computed joint angles in the forward kinematics and check where the gripper ends up.
+For every reachable test position, the cube-centre point of the gripper lands on the target to within rounding, the gripper points straight down, and the jaws are square to the cube faces.
+(The first version of this check used a MuJoCo model in `sim/`; it was removed on 2026-10-12 in favour of the simulator.)
 
 | Cube at (x, y) | Hover | S1 | S2 | S3 | S4 | S5 |
 |----------------|-------|----|----|----|----|----|
@@ -235,6 +234,6 @@ For every reachable test position, the cube-centre point of the gripper lands on
 Angles are joint angles of the model, measured from the straight-up zero pose; positive S2 to S4 tilt the arm forward.
 They are not yet servo counts, because the angles at HOME are not measured.
 
-`sim/pick_place.py` runs the full sequence of section 4 with physics (gravity, contacts, position-controlled joints).
-Result on 2026-10-12: the cube moved from (5, 15) to (-8, 12) and ended 0,28 cm from the target, which is inside the gripper tolerance.
-The masses, joint gains and friction in the model are placeholders, so this shows that the sequence and geometry work, not that the real servos will do the same.
+The simulator runs the full sequence of section 4 with its own cube physics (gravity, friction, contacts) and checks every plan before it can run.
+Its tests move a cube on the board and stack two cubes on another, each ending within 0,9 cm of the target with no contact on the way (`docs/threejs-sim.md`).
+Servo dynamics are not modelled: joints follow the controller's commanded trajectory exactly, so this shows that the sequence and geometry work, not that the real servos keep up.

@@ -33,7 +33,7 @@ export const GRIPPER = {
   thetaClosed: 11.0,       // at S6 = 650
 };
 
-// Servo table. q_home is the model angle (sim/arm.xml convention, 0 = straight up,
+// Servo table. q_home is the model angle (0 = all links straight up,
 // positive S2..S4 tilt toward +Y, positive S1 turns +Y toward +X) at the HOME count.
 // dir: +1 if increasing counts increases the model angle.
 //

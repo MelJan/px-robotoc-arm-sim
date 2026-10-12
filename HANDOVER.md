@@ -29,9 +29,7 @@ A 6DOF desktop arm (Tatiy kit, six MG996R servos, `docs/amazon-product-info.md`)
 | `docs/controller-live-2026-10-12.md` | What the live controller showed: camera frame, UI, live HOME, the team's hand-taught pick and place |
 | `docs/simulator-proposal.md` | The pasted proposal: Godot vs Unreal + URLab vs MuJoCo |
 | `docs/unreal-setup.md` | Unreal 5.8 + MCP setup, toolchain, URLab version conflict. **Unreal route dropped on 2026-10-12; `unreal/` and `.mcp.json` were deleted** |
-| `sim/` | MuJoCo model (`arm.xml`), IK (`ik.py`), IK check, physics pick-and-place run |
 | `vision/blocks.py` | Cube finder: camera fit from the mat markers, colour segmentation, stack levels, positions |
-| `vision/test_synthetic.py` | Renders a stacked scene in MuJoCo through the real camera model and checks `blocks.py` |
 | `threejs-sim/` | **The simulator**: browser app with kinematics, controller emulation, collision, cube physics, planning, camera calibration and cube recognition. `threejs-sim/README.md`, design in `docs/threejs-sim.md` |
 | `integration/` | Patch for `lutich/robot-arm` that serves the simulator under `/sim/` (not applied) |
 | `docs/images/photos/` | All real photos of the arm and setup (renamed from `Media*.jpg` and the old gripper/arm photos) |
@@ -41,22 +39,20 @@ A 6DOF desktop arm (Tatiy kit, six MG996R servos, `docs/amazon-product-info.md`)
 
 | Item | Result |
 |------|--------|
-| IK (`sim/check_ik.py`) | For every reachable test position the gripper lands on target to within rounding, pointing straight down, jaws square to the cube |
-| Physics run (`sim/pick_place.py`) | Cube moved from (5, 15) to (-8, 12) cm, ended 0,28 cm off target. Masses and gains are guesses, so this checks the sequence, not the real servos |
+| Simulator tests (`threejs-sim/test/`) | 18 tests: IK against the plan's table, FK round trip, gripper linkage, controller rules, collision, cube physics (stable stack, topple, push), pick/place and two-level stacking, camera calibration against OpenCV |
 | Camera model (`vision/blocks.py`) | Fitted from the mat markers in every frame: 0,86 px error, f = 952 px, camera 37 cm above the mat, 12 cm beyond the far edge. The stored homography from 2026-10-11 is outdated (off by up to 39 mm) |
 | Cube on the real mat | Found at X = 154,5, Y = -108 mm, level 0, front edge 26,1 mm (real 26,5) |
-| Stacked cubes, synthetic | Orange, blue on orange, yellow on blue, green alone: all levels right, 0,6 to 2,1 mm error |
+| Stacked cubes, synthetic | Orange, blue on orange, yellow on blue, green alone: all levels right, 0,6 to 2,1 mm error (checked with a MuJoCo render that has since been removed) |
 | Unreal MCP | UE 5.8.3 started headless with `unreal/PxArmSim`; the MCP server answered and listed 52 toolsets, including actor, scene, mesh and viewport-capture tools |
 
 Commands:
 
 ```powershell
 cd C:\Users\adm_bjung\Documents\px-robotic-arm-sim
-.\.venv\Scripts\python.exe sim\check_ik.py
-.\.venv\Scripts\python.exe sim\pick_place.py --view
+node threejs-sim\server.mjs --mock                                                  # simulator, http://127.0.0.1:8770/
+node --test threejs-sim\test\*.test.mjs
 .\.venv\Scripts\python.exe vision\blocks.py docs\images\photos\controller-camera-2026-10-12.jpg --out annotated.png
 .\.venv\Scripts\python.exe vision\blocks.py --url http://10.102.4.103:8765 --every 5     # GET only, never moves the arm
-.\.venv\Scripts\python.exe vision\test_synthetic.py
 ```
 
 ## 4. Open items, most important first
@@ -73,7 +69,7 @@ Already answered: the gripper opens at 490, grips the cube at 590 and is fully c
 
 ## 5. Simulator
 
-**Decided and built: `threejs-sim/`.** Run `node threejs-sim/server.mjs --mock` and open http://127.0.0.1:8770/. 18 tests: `node --test threejs-sim/test/*.test.mjs`.
+**Decided and built: `threejs-sim/`.** Only three.js and our own code: the MuJoCo scripts (`sim/`, `vision/test_synthetic.py`) were removed on 2026-10-12, their IK and checks live on in the simulator and its tests. Run `node threejs-sim/server.mjs --mock` and open http://127.0.0.1:8770/. 18 tests: `node --test threejs-sim/test/*.test.mjs`.
 What it covers, how, and the next steps (including the controller-page integration) are in `docs/threejs-sim.md`.
 The rest of this section is the earlier state of the Unreal route, kept for reference. **The Unreal project (`unreal/`), the cloned URLab plugin and `.mcp.json` were deleted on 2026-10-12 at the user's request.** Unreal Engine 5.8 itself is still installed.
 
@@ -104,7 +100,7 @@ Unreal (or URLab) only pays off if photoreal rendering or synthetic camera image
 
 | Tool | State |
 |------|-------|
-| Python venv | `.venv` (Python 3.13) with `mujoco` 3.15, `numpy`, `opencv-python` 5.0. Recreate with `py -3.13 -m venv .venv` and `pip install mujoco numpy opencv-python` |
+| Python venv | `.venv` (Python 3.13) with `numpy` and `opencv-python` 5.0, only for `vision/blocks.py`. Recreate with `py -3.13 -m venv .venv` and `pip install numpy opencv-python`. MuJoCo was removed on 2026-10-12 |
 | Unreal Engine | 5.8.3, `C:\Program Files\Epic Games\UE_5.8` |
 | Visual Studio 2022 Community | 17.14.41, MSVC 14.44 (cl 19.44.35229), installed via winget. **Licence:** Community may not be allowed for a company of this size; check whether Professional is needed |
 | CMake 4.4, Node.js 24 | User scope, via winget |

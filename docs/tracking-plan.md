@@ -16,7 +16,7 @@ Constraints:
 | The printed mat with six ArUco markers at known positions (280 x 360 mm) | Camera model per frame |
 | Cube size, 26,5 mm | Stack heights, cube centre, plausibility checks |
 | Cubes are axis-aligned boxes resting on the mat or on each other | Heights are multiples of 26,5 mm |
-| The arm's link lengths and the commanded servo counts | Where the arm should be (`sim/`) |
+| The arm's link lengths and the commanded servo counts | Where the arm should be (`threejs-sim/`) |
 
 ## 2. Camera model from the mat, every frame
 
@@ -61,7 +61,7 @@ Output per cube: colour, level, the cube it rests on, X and Y in mm, bottom and 
 | Real frame, orange cube held in the gripper | Edge 11 mm, correctly flagged as hidden |
 | Synthetic render (`vision/test_synthetic.py`): orange, blue on orange, yellow on blue, green alone | All levels right, position error 0,6 to 2,1 mm |
 
-The synthetic test renders the mat and cubes in MuJoCo through the camera fitted to the real frame, then runs the detector on the render.
+The synthetic test rendered the mat and cubes in MuJoCo through the camera fitted to the real frame, then ran the detector on the render (`vision/test_synthetic.py`, removed on 2026-10-12 together with the MuJoCo code; the result above stands).
 It checks the geometry, not the colour thresholds or real lighting.
 
 ### Limits
@@ -79,7 +79,7 @@ Not built yet. Options, in the order we suggest:
 2. **Calibrate with it.** Command a set of poses, record the marker pose for each, and fit:
    - the joint angle at HOME and the counts per degree for each servo, the main open item in `pick-and-place-plan.md`;
    - the S1 axis position on the mat (the offset `d`), from the circle the gripper draws when only S1 moves.
-3. **Render and compare.** For each commanded pose, render the MuJoCo model through the fitted camera and compare it with the dark arm pixels in the image. No marker needed, and at one frame every 5 seconds there is plenty of time. More work and less precise than a marker.
+3. **Render and compare.** For each commanded pose, render the three.js model (the simulator's Camera tab already renders it through the fitted camera) through the fitted camera and compare it with the dark arm pixels in the image. No marker needed, and at one frame every 5 seconds there is plenty of time. More work and less precise than a marker.
 
 Monocular depth networks are not needed: the cube heights come from the known size, and the arm's from its kinematics.
 
@@ -90,12 +90,12 @@ Per command, such as "put blue on orange":
 1. Take a frame, find all cubes and their levels.
 2. Pick: the blue cube, which must be a top cube. Grasp height = its centre, `(level + 0.5) x 26,5 mm`.
 3. Place: on top of orange's stack. Release height = `top_z + 13,25 mm`, at the X and Y of the top cube of that stack.
-4. Convert both positions to the board frame (needs `d`) and run the IK in `sim/ik.py` with `z_c` set to the height.
+4. Convert both positions to the board frame (needs `d`) and run the IK (`threejs-sim/js/kinematics.js`, `ikTopDown`) with the cube centre at that height.
 5. After placing, take a new frame and check that blue is now one level above orange. If not, retry or stop.
 
 ### Reach for stacking
 
-Higher cubes leave less reach for a top-down grasp (`sim/ik.py`, `max_reach`):
+Higher cubes leave less reach for a top-down grasp (`threejs-sim/js/kinematics.js`, `maxReach`):
 
 | Cube level | Cube centre height | Max distance from S1, grasp | Hover 2 cm | Hover 5 cm |
 |------------|--------------------|-----------------------------|------------|------------|

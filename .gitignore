@@ -2,7 +2,6 @@
 __pycache__/
 *.pyc
 .DS_Store
-MUJOCO_LOG.TXT
 
 
 # Third-party reference images (sources in docs/images/web/SOURCES.md); keep them local
