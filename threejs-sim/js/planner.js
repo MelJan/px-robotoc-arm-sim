@@ -261,11 +261,11 @@ export function toMoves(world, plan, start, servos = SERVOS) {
   let cur = start.slice();
   const moves = [], notes = [];
   w.step(0, cur);
-  const clearOrder = order => {
+  const clearOrder = (order, from0 = cur, to0 = target) => {
     const snap = w.snapshot();
-    let c = cur.slice(), clean = true;
+    let c = from0.slice(), clean = true;
     for (const ch of order) {
-      const from = c[ch], to = target[ch];
+      const from = c[ch], to = to0[ch];
       for (const f of [0.25, 0.5, 0.75, 1]) {
         c[ch] = from + (to - from) * f;
         w.step(0, c);
@@ -276,19 +276,39 @@ export function toMoves(world, plan, start, servos = SERVOS) {
     w.restore(snap);
     return clean;
   };
+  const ordersFor = (a, b) => {
+    const changed = [0, 1, 2, 3, 4, 5].filter(ch => b[ch] !== a[ch]);
+    // Lifting: raise S2 (shoulder) last when going down, first when going up; S6 alone.
+    return changed.length <= 4 ? PERMS(changed)
+      : [changed, changed.slice().reverse(), [1, 2, 3, 0, 4, 5].filter(c => changed.includes(c)), [3, 2, 1, 0, 4, 5].filter(c => changed.includes(c))];
+  };
   let target;
   for (const s of plan.steps) {
     target = s.counts;
-    const changed = [0, 1, 2, 3, 4, 5].filter(ch => target[ch] !== cur[ch]);
-    // Lifting: raise S2 (shoulder) last when going down, first when going up; S6 alone.
-    const candidates = changed.length <= 4 ? PERMS(changed)
-      : [changed, changed.slice().reverse(), [1, 2, 3, 0, 4, 5].filter(c => changed.includes(c)), [3, 2, 1, 0, 4, 5].filter(c => changed.includes(c))];
-    let order = candidates.find(clearOrder);
-    if (!order) { order = candidates[0]; notes.push(`${s.label}: no contact-free joint order found`); }
-    for (const ch of order) moves.push({ ch, target: target[ch], label: `${s.label}: ${servos[ch].name} → ${target[ch]}` });
-    // Advance the world through this step so grasp and release happen.
+    const candidates = ordersFor(cur, target);
+    // a direct joint order, or else up through the raised arm (S2..S4 at HOME), across, and down again
+    let legs = null;
+    const direct = candidates.find(o => clearOrder(o));
+    if (direct) legs = [[direct, target]];
+    else {
+      const up = cur.slice(); for (const ch of [1, 2, 3]) up[ch] = servos[ch].home;
+      const over = up.slice(); for (const ch of [0, 4]) over[ch] = target[ch];
+      const route = [];
+      let from = cur;
+      for (const to of [up, over, target]) {
+        const o = ordersFor(from, to).find(x => clearOrder(x, from, to));
+        if (!o) { route.length = 0; break; }
+        route.push([o, to]); from = to;
+      }
+      if (route.length) legs = route;
+    }
+    if (!legs) { legs = [[candidates[0], target]]; notes.push(`${s.label}: no contact-free joint order found`); }
     const c = cur.slice();
-    for (const ch of order) { c[ch] = target[ch]; w.step(0, c); }
+    for (const [order, to] of legs) for (const ch of order) {
+      if (c[ch] === to[ch]) continue;
+      moves.push({ ch, target: to[ch], label: `${s.label}: ${servos[ch].name} → ${to[ch]}` });
+      c[ch] = to[ch]; w.step(0, c);                       // advance the world so grasp and release happen
+    }
     for (let i = 0; i < 60 && !w.settled(); i++) w.step(0.02, c);
     cur = target.slice();
   }

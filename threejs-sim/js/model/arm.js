@@ -3,7 +3,7 @@
 // horn and claw shapes follow the photos and the kit drawings.
 
 import * as THREE from 'three';
-import { ARM, ARM_TAGS } from '../config.js';
+import { ARM, ARM_TAGS, BASE } from '../config.js';
 import { V, at, orient, box, cyl, plate, hornHoles, bake, joint } from './geometry.js';
 import { screwAt, nut, servo, horn, sidePlate, bend, zipTie } from './parts.js';
 import { buildGripper } from './gripper.js';
@@ -65,7 +65,7 @@ export function buildArm(M) {
   // ---- static base: two "U beam" brackets, 90 x 42 x 25 mm (docs/images/web/bracket-u-beam-base-dimensions.jpg),
   // lying on their sides with the webs back to back in the middle: legs form the 9 x 8,4 top and
   // bottom plates, the meeting webs form the centre groove, the open sides face front and back.
-  const H = 2.5;
+  const H = BASE.h;
   const base = new THREE.Group(); root.add(base);
   // The plate is not centred on S1: the S1 servo stands at its back, the plate reaches forward
   // over the mat (photos/base-shoulder-closeup.jpg, photos/setup-top-view-base.jpg).
@@ -85,7 +85,7 @@ export function buildArm(M) {
   }
 
   // S1 servo upright in a multi-function bracket on the base, shaft on the S1 axis.
-  const zS1 = H + 3.92;   // S1 case on the bracket plate, shaft on top
+  const zS1 = BASE.s1Shaft;   // S1 shaft height (the case reaches down into the base box)
   const s1 = servo(M); s1.rotation.z = Math.PI; at(s1, 0, 0, zS1); base.add(s1);
   const mb = plate(6.1, 2.6, 0.2, M.anodised, [[-2.4, 0.7, 0.16], [-2.4, -0.7, 0.16], [2.4, 0.7, 0.16], [2.4, -0.7, 0.16], [0, 0, 0.6]], 0.25);
   at(mb, -1.03, 0, H + 0.1); base.add(mb);

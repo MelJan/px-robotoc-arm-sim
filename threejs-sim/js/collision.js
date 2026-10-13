@@ -7,7 +7,7 @@
 // Box-box uses the separating axis test, so its positive value is a lower bound of the
 // distance; that is enough for "collides or not" with a small tolerance.
 
-import { ARM, CUBE, GRIPPER } from './config.js';
+import { ARM, BASE, CUBE, GRIPPER } from './config.js';
 import { apply3, transpose3, point, compose, I3, rotZ, padDepthForTheta, thetaForGap } from './kinematics.js';
 
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -145,7 +145,7 @@ export function armShapes(f, gap) {
   const world = { R: I3(), p: [0, 0, 0] };
 
   // Base: two U beams 9 x 8,4 x 2,5, the S1 servo and its bracket; does not turn with S1.
-  add('base', LINK.base, boxInFrame(world, [0, 2.2, 1.25], [4.5, 4.2, 1.25]));   // plate centre 2,2 in front of S1 (model.js BASE_OFFSET_Y)
+  add('base', LINK.base, boxInFrame(world, [0, BASE.offsetY, BASE.h / 2], [4.5, 4.2, BASE.h / 2]));   // plate centre 2,2 in front of S1
   add('S1 servo', LINK.base, boxInFrame(world, [-1.0, 0, 4.5], [3.1, 1.4, 2.0]));
   // Turret: bracket on the S1 horn with the S2 servo lying toward the back; turns with S1.
   add('turret', LINK.turret, boxInFrame(f.base, [0, -0.8, 8.95], [2.7, 2.6, 1.95]));

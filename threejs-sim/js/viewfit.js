@@ -7,12 +7,12 @@
 // y down, z forward), p_cam = R (P - C), u = cx + f x / z, v = cy + f y / z, principal point
 // at the image centre.
 
-import { ARM, MAT } from './config.js';
+import { ARM, BASE, MAT } from './config.js';
 import { fk, point, gapForTheta, gripperTheta, thetaForGap, padDepthForTheta } from './kinematics.js';
 import { rodrigues, rotvec, solve, MARKER_CORNERS, markerCentre } from './calib.js';
 
 const RAD = Math.PI / 180, DEG = 180 / Math.PI;
-const BASE_Y = 2.2, BASE_H = 2.5;          // js/model/arm.js: base plate centre and height
+const BASE_Y = BASE.offsetY, BASE_H = BASE.h;   // config.js BASE: base plate centre and height
 const baseFront = BASE_Y + 4.12, baseBack = BASE_Y - 4.12;
 
 /**

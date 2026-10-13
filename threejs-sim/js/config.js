@@ -17,6 +17,11 @@ export const ARM = {
 
 export const BOARD = { w: 30, d: 38, t: 1.0, axisToBackEdge: 1.5 };
 
+// The arm's base: two U-beam brackets stacked into a box, its top plate BASE.h above the board. 3,3 cm from
+// the photos (photos/park-gripper-on-base.jpg: the drawn 2,5 was visibly too low). The S1 shaft (BASE.s1Shaft)
+// and the S2 axis (ARM.H_S2) keep their heights: the S1 servo sits deeper in the base.
+export const BASE = { h: 3.3, s1Shaft: 6.42, offsetY: 2.2 };
+
 export const CUBE = 2.65;
 
 // Gripper parallel linkage, gripper-local u (sideways) and v (down from the flange), cm.
