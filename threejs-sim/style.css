@@ -28,7 +28,19 @@ main { flex: 1; display: flex; min-height: 0; }
 .contacts { position: absolute; left: 10px; bottom: 10px; max-width: 60%; background: var(--danger-soft); color: var(--danger); border: 1px solid #efc2bf; border-radius: 8px; padding: 6px 10px; font-weight: 600; }
 .track-hud { position: absolute; right: 10px; bottom: 10px; max-width: 46%; background: rgba(255, 255, 255, 0.92); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; padding: 6px 10px; font-size: 12px; line-height: 1.45; font-variant-numeric: tabular-nums; pointer-events: none; }
 .track-hud b { color: var(--accent); }
-.track-hud .miss { color: var(--warn); }
+.live-readout { position: absolute; right: 10px; top: 62px; width: 360px; max-height: calc(100% - 300px); overflow-y: auto; background: rgba(255, 255, 255, 0.95); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 10px; padding: 8px 12px; font-variant-numeric: tabular-nums; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.live-readout .ro-head, .live-readout .ro-list-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.live-readout .ro-big { font-size: 26px; font-weight: 500; margin: 2px 0; }
+.live-readout .ro-big b { font-weight: 750; color: var(--ink); margin-right: 8px; }
+.live-readout .ro-mid { font-size: 17px; margin-bottom: 2px; }
+.live-readout .ro-small { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.live-readout .ro-cube { font-size: 14px; padding: 2px 0; }
+.live-readout .chip { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.2); }
+.live-readout .ro-list-head { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 6px; }
+.live-readout .ro-list { font-size: 12px; max-height: 160px; overflow-y: auto; }
+.live-readout .ro-list div { padding: 2px 0; border-bottom: 1px dashed var(--line); }
+.live-readout button { font-size: 12px; padding: 3px 8px; }
+.track-hud .miss, .live-readout .miss { color: var(--warn); }
 .toast { position: absolute; right: 10px; bottom: 10px; max-width: 50%; background: #1d2733; color: #fff; border-radius: 8px; padding: 8px 12px; }
 
 #panel { width: var(--panel-w, 520px); min-width: 300px; max-width: 75vw; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; flex: none; }

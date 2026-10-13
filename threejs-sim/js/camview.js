@@ -13,11 +13,11 @@ import { detectMarkers } from './aruco.js';
 import { calFromLookAt, detectArmTags, triangulate, fitArmPose, tagPoints, projectBoard, boardToTable } from './armtrack.js';
 import { locateCubes } from './locate3d.js';
 import { fitPartPose, learnTagLayout } from './rigidtrack.js';
-import { findTags, solveArm } from './armsolve.js';
+import { findTags, solveArm, pickGap, gripperScrews } from './armsolve.js';
 import { recalibrate, RECAL_PARAMS, layoutFor, applyRecalibration } from './recalib.js';
 import { fitJointPair, estimateJointAxis } from './jointfit.js';
 import { armShapes, LINK } from './collision.js';
-import { fk } from './kinematics.js';
+import { fk, point } from './kinematics.js';
 import { CUBE } from './config.js';
 
 const W = CAMERA.w, H = CAMERA.h;
@@ -97,7 +97,8 @@ export function initCameraTab(ctx) {
     const opt = (label, id, title) => { const b = document.createElement('button'); b.textContent = label; b.title = title; b.dataset.for = id; b.onclick = e => { e.stopPropagation(); const c = $(id); c.checked = !c.checked; c.dispatchEvent(new Event('change')); syncBars(); }; return b; };
     bar.append(
       opt('Sim', 'cam-show-sim', 'Simulated view under the frame'), opt('Mat', 'cam-show-grid', 'Mat grid and axes'), opt('Marks', 'cam-show-marks', 'Markers and model tags'),
-      opt('Tags', 'cam-show-parts', 'Tags coloured by part'), opt('Parts', 'cam-show-bodies', 'Estimated parts as wireframes'), opt('Follow', 'cam-arm-ghost', 'Draw the arm at the tracked pose (while tracking)'));
+      opt('Tags', 'cam-show-parts', 'Tags coloured by part'), opt('Parts', 'cam-show-bodies', 'Estimated parts as wireframes'), opt('Follow', 'cam-arm-ghost', 'Draw the arm at the tracked pose (while tracking)'),
+      opt('Screws', 'cam-show-screws', 'Screw heads found near the gripper (cyan) and the model screws (live tracking)'), cleanButton());
     const op = document.createElement('input'); op.type = 'range'; op.min = 0; op.max = 100; op.value = 50; op.title = 'Real frame opacity'; op.className = 'cam-op';
     op.oninput = e => { e.stopPropagation(); $('cam-opacity').value = op.value; $('cam-opacity').dispatchEvent(new Event('input')); };
     op.onclick = e => e.stopPropagation();
@@ -125,6 +126,21 @@ export function initCameraTab(ctx) {
   //   file   an image from disk
   const VIDEO_LIMIT_MIN = 10;
   const isVideo = st => st.img.src.includes('stream.mjpg');
+  // "Clean": all marks off in the camera views (the frame and the simulated view stay); again: back as they were
+  const MARK_IDS = ['cam-show-grid', 'cam-show-marks', 'cam-show-parts', 'cam-show-bodies', 'cam-show-screws'];
+  let cleanSaved = null;
+  function cleanButton() {
+    const b = document.createElement('button'); b.textContent = 'Clean'; b.title = 'Hide all marks in the camera views (click again to bring them back)';
+    b.onclick = e => {
+      e.stopPropagation();
+      if (cleanSaved) { MARK_IDS.forEach(id => { $(id).checked = cleanSaved[id]; }); cleanSaved = null; }
+      else { cleanSaved = Object.fromEntries(MARK_IDS.map(id => [id, $(id).checked])); MARK_IDS.forEach(id => { $(id).checked = false; }); }
+      for (const c of document.querySelectorAll('.cam-bar button.clean')) c.classList.toggle('on', !!cleanSaved);
+      syncBars(); draw();
+    };
+    b.className = 'clean';
+    return b;
+  }
   const stopVideo = (reason, st = S) => {
     if (!st.videoTimer && !isVideo(st)) return;
     clearTimeout(st.videoTimer); st.videoTimer = null;
@@ -299,10 +315,12 @@ export function initCameraTab(ctx) {
   // and searched for tags in its own Web Worker (separate CPU cores, the page never waits), the joint fit runs in
   // one of them, and the model follows. Ends after LIVE_LIMIT_MIN, when the page is hidden, or with stopLive().
   const LIVE_LIMIT_MIN = 10;
-  let workers = null, liveSeq = 0, liveTimer = null, liveUntil = 0;
-  const plainCal = c => ({ R: c.R, t: c.t, f: c.f, cx: c.cx, cy: c.cy, rms: c.rms });
+  let workers = null, liveSeq = 0, liveTimer = null, liveUntil = 0, liveGap = null;
+  // a calibration as plain data for the workers; the camera centre (table mm) is needed by the cube search
+  const plainCal = c => ({ R: c.R, t: c.t, f: c.f, cx: c.cx, cy: c.cy, rms: c.rms,
+    centre: c.centre || [0, 1, 2].map(i => -(c.R[0][i] * c.t[0] + c.R[1][i] * c.t[1] + c.R[2][i] * c.t[2])) });
   const tagLayout = () => ARM_TAGS.map(({ key, centre, normal, up, size }) => ({ key, centre, normal, up, size }));
-  const liveRate = () => Number($('live-rate')?.value || 2000);
+  const liveRate = () => Number($('live-rate')?.value || 500);
   function ask(worker, msg) {
     return new Promise(res => {
       const on = ({ data }) => { if (data.seq !== msg.seq) return; worker.removeEventListener('message', on); res(data); };
@@ -314,7 +332,7 @@ export function initCameraTab(ctx) {
     const base = { seq, layout: tagLayout(), d: MAT.sToEdge };
     const start = ctx.trackStart?.() ?? ctx.armAngles(), quick = !!ctx.trackStart?.() && lastTagViews >= 2;
     // all cameras at once, one worker each
-    const replies = await Promise.all(list.map((st, i) => ask(workers[i], { ...base, type: 'tags', start, quick, w: W, h: H,
+    const replies = await Promise.all(list.map((st, i) => ask(workers[i], { ...base, type: 'tags', start, quick, w: W, h: H, cubes: true,
       cam: { id: st.cam.id, url: new URL(`${apiUrl(st, 'snapshot.jpg')}?t=${Date.now()}`, location.href).href, cal: plainCal(st.cal) } })));
     if (!live || seq !== liveSeq) return;
     // the frames that were tracked are the ones shown
@@ -328,9 +346,35 @@ export function initCameraTab(ctx) {
       commanded: ctx.armAngles(), last: ctx.trackStart?.(), useCorners: $('cam-arm-corners').checked });
     if (!live || seq !== liveSeq) return;
     showArm(views, s.solved, { quiet: true });
+    // the cubes in 3D at their real height, the blobs on the tracked arm left out
+    list.forEach((st, i) => { st.detections = replies[i].cubes || []; });
+    const arm = s.solved.result?.angles ?? ctx.trackStart?.();
+    // (in a worker: the joint fit of several cubes can take half a second)
+    const cr = await ask(workers[0], { ...base, type: 'cubes', views: list.map(st => ({ cal: plainCal(st.cal), detections: st.detections })), arm: arm ? { angles: arm } : null });
+    if (!live || seq !== liveSeq) return;
+    cubes3d = cr.cubes; cubes3d.onArm = cr.onArm;
+    ctx.onLiveCubes?.(cubes3d);
+    showDetections(0);
+    // the jaw opening: the model's fingers for several gaps against each frame (in the workers), smoothed over rounds
+    if (s.solved.result) {
+      const gaps = Array.from({ length: 19 }, (_, i) => i * 0.25), holding = cubes3d.some(c => c.where === 'gripper');
+      const per = await Promise.all(list.map((st, i) => ask(workers[i], { ...base, type: 'gap', cal: plainCal(st.cal), angles: s.solved.result.angles, gaps, w: W, h: H })));
+      if (!live || seq !== liveSeq) return;
+      const g = pickGap(gaps, per, { holding });
+      if (g.cameras) liveGap = liveGap == null ? g.gap : 0.5 * liveGap + 0.5 * g.gap;   // smoothed over rounds
+      else if (g.gap != null) liveGap = g.gap;
+      // for the Screws view: the screw heads found, and the model's screws at the current gap (with that camera's best shift)
+      list.forEach((st, i) => {
+        const sc = per[i].screws; if (!sc || liveGap == null) { st.screws = null; return; }
+        const k = gaps.reduce((b, g, j) => Math.abs(g - liveGap) < Math.abs(gaps[b] - liveGap) ? j : b, 0), sh = sc.shifts[k], hand = fk(s.solved.result.angles).hand;
+        const P = p => { const q = projectBoard(st.cal, point(hand, p)); return [q[0] + sh[0], q[1] + sh[1]]; }, m = gripperScrews(liveGap, sc.side);
+        st.screws = { spots: sc.spots, fixed: m.fixed.map(P), moving: m.moving.map(P) };
+      });
+      ctx.onGap?.({ gap: liveGap, source: g.cameras ? `finger bars in ${g.cameras} camera${g.cameras > 1 ? 's' : ''}` : g.gap != null ? 'cube width' : liveGap != null ? 'last estimate' : 'unknown', holding });
+    }
     trackFrames++;
     const errs = replies.filter(r => r.error).map(r => `${r.id}: ${r.error}`);
-    const stats = `round ${trackFrames}: ${(performance.now() - t0).toFixed(0)} ms (frame + tags ${replies.map(r => `${r.id} ${(r.ms.frame ?? 0) + (r.ms.tags ?? 0)}`).join(' · ')} ms in parallel, fit ${s.ms.fit} ms, ${quick ? 'near the arm' : 'whole frames'})${errs.length ? ' · ' + errs.join(', ') : ''}`;
+    const stats = `round ${trackFrames}: ${(performance.now() - t0).toFixed(0)} ms (frame + tags ${replies.map(r => `${r.id} ${(r.ms.frame ?? 0) + (r.ms.tags ?? 0)}`).join(' · ')} ms in parallel, cubes ${replies.map(r => r.ms.cubes ?? 0).join(' · ')} ms, fit ${s.ms.fit} ms, ${quick ? 'near the arm' : 'whole frames'})${errs.length ? ' · ' + errs.join(', ') : ''}`;
     $('cam-track-stats').textContent = `live ${stats}`;
     ctx.onLiveStats?.(stats);
   }
@@ -347,7 +391,7 @@ export function initCameraTab(ctx) {
     for (const st of Object.values(states)) { if (st.source === 'video') stopVideo('', st); st.source = 'live'; st.points = []; st.liveCal = false; }
     $('cam-source').value = 'live'; $('cam-refresh').disabled = false; $('cam-refresh').textContent = 'Refresh snapshots';
     $('cam-arm-ghost').checked = true; $('cam-arm-ghost').dispatchEvent(new Event('change'));
-    trackFrames = 0; lastTagViews = 0; live = true; liveUntil = Date.now() + LIVE_LIMIT_MIN * 60000;
+    trackFrames = 0; lastTagViews = 0; liveGap = null; live = true; liveUntil = Date.now() + LIVE_LIMIT_MIN * 60000;
     ctx.onLive?.(true);
     ctx.log(`live tracking on: one snapshot per camera every ${liveRate() / 1000} s (read only), tags found in ${workers.length} worker threads`, 'ok');
     liveLoop();
@@ -614,6 +658,7 @@ export function initCameraTab(ctx) {
   }
   $('cam-arm-out').innerHTML = legend();
   $('cam-show-parts').onchange = () => draw();
+  $('cam-show-screws').onchange = () => draw();
 
   // ---- drawing (the camera shown)
   /** A collision shape (collision.js) as a wireframe through the projection P. */
@@ -690,6 +735,13 @@ export function initCameraTab(ctx) {
       g.font = 'bold 13px system-ui'; g.fillText(`${id}`, q[2][0] + 6, q[2][1] + 16);
     }
     // each rigid part where its tags alone put it: its shapes as a wireframe, in the part's colour
+    // screw heads found near the gripper (cyan rings) and the model's screws: fixed (yellow +), on the fingers (orange x)
+    if ($('cam-show-screws').checked && st.screws) {
+      g.lineWidth = 1.5; g.strokeStyle = '#22d3ee';
+      for (const [u, v] of st.screws.spots) { g.beginPath(); g.arc(u, v, 5, 0, 2 * Math.PI); g.stroke(); }
+      const mark = ([u, v], c, x) => { g.strokeStyle = c; g.beginPath(); if (x) { g.moveTo(u - 4, v - 4); g.lineTo(u + 4, v + 4); g.moveTo(u + 4, v - 4); g.lineTo(u - 4, v + 4); } else { g.moveTo(u - 5, v); g.lineTo(u + 5, v); g.moveTo(u, v - 5); g.lineTo(u, v + 5); } g.stroke(); };
+      st.screws.fixed.forEach(p => mark(p, '#facc15', false)); st.screws.moving.forEach(p => mark(p, '#f97316', true));
+    }
     if ($('cam-show-bodies').checked) for (const p of Object.values(parts)) {
       const frames = fk(ctx.armAngles()); frames[p.link] = { R: p.R, p: p.p };
       const ids = p.link === 'wrist' ? [LINK.wrist] : [LINK.hand, LINK.fingerL];
@@ -785,7 +837,7 @@ export function initCameraTab(ctx) {
   }
   $('view-cams').onclick = () => showInMain($('cam-main').hidden);
   function syncBars() { for (const b of document.querySelectorAll('.cam-bar button[data-for]')) b.classList.toggle('on', $(b.dataset.for).checked); for (const r of document.querySelectorAll('.cam-op')) r.value = $('cam-opacity').value; }
-  for (const id of ['cam-show-sim', 'cam-show-grid', 'cam-show-marks', 'cam-show-parts', 'cam-show-bodies', 'cam-arm-ghost', 'cam-opacity']) $(id).addEventListener(id === 'cam-opacity' ? 'input' : 'change', syncBars);
+  for (const id of ['cam-show-sim', 'cam-show-grid', 'cam-show-marks', 'cam-show-parts', 'cam-show-bodies', 'cam-show-screws', 'cam-arm-ghost', 'cam-opacity']) $(id).addEventListener(id === 'cam-opacity' ? 'input' : 'change', syncBars);
   syncBars();
   $('cams-full').onclick = () => fullscreen($('cam-stages'));
   document.addEventListener('fullscreenchange', () => update());

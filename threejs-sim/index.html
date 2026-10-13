@@ -47,7 +47,7 @@
       <button id="view-cams" title="Show both cameras here instead of the 3D view">Cameras</button>
       <button id="cams-full" title="Both cameras full screen (Esc to leave)">⛶ Both</button>
       <button id="live-track" title="One snapshot from each camera at the chosen interval (read only, stops after 10 min), the arm found from its tags (in background threads, one per camera) and drawn where the cameras see it; the tags seen right now are marked">● Live tracking</button>
-      <select id="live-rate" title="How often live tracking reads both cameras (one snapshot each)"><option value="1000">every 1 s</option><option value="2000" selected>every 2 s</option><option value="5000">every 5 s</option><option value="10000">every 10 s</option></select>
+      <select id="live-rate" title="How often live tracking reads both cameras (one snapshot each)"><option value="500" selected>every 0,5 s</option><option value="1000">every 1 s</option><option value="2000">every 2 s</option><option value="5000">every 5 s</option><option value="10000">every 10 s</option></select>
       <span class="sep"></span>
       <button data-view="orbit" class="on">Perspective</button>
       <button data-view="top">Top</button>
@@ -62,6 +62,7 @@
     </div>
     <div id="contacts" class="contacts" hidden></div>
     <div id="track-hud" class="track-hud" hidden></div>
+    <div id="live-readout" class="live-readout" hidden></div>
     <div id="toast" class="toast" hidden></div>
   </section>
 
@@ -268,6 +269,7 @@
           <label class="inline"><input type="checkbox" id="cam-track-arm" checked> While tracking</label>
           <label class="inline" title="Colour the tags by the rigid part they sit on and join the tags of one part"><input type="checkbox" id="cam-show-parts" checked> Tags &amp; parts</label>
           <label class="inline" title="Each part where its tags alone put it (rigid-body fit), drawn over the frame"><input type="checkbox" id="cam-show-bodies" checked> Estimated parts</label>
+          <label class="inline" title="Screw heads found near the gripper (cyan) and the model screws (live tracking)"><input type="checkbox" id="cam-show-screws"> Screws</label>
           <button id="cam-arm-learn" title="Measure where each seen tag sits on its part (relative to the part's fit) and use that">Learn tag layout</button>
         </div>
         <div class="row wrap">

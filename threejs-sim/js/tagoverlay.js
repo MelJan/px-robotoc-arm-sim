@@ -7,7 +7,7 @@ import { ARM_TAGS, ARM_PARTS } from './config.js';
 import { fk, point } from './kinematics.js';
 import { tagPoints } from './armtrack.js';
 
-function label(text, colour) {
+export function label(text, colour) {
   const c = document.createElement('canvas'); c.width = 1024; c.height = 64;
   const g = c.getContext('2d');
   g.font = 'bold 30px system-ui';

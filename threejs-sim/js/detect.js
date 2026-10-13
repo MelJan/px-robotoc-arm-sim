@@ -25,6 +25,7 @@ export const COLOUR_RULES = [
   { colour: 'blue', test: (h, s, v) => h >= 190 && h < 255 && s > 0.4 && v > 0.2, hue: h => h >= 186 && h < 258 },
 ];
 const WEAK_S = 0.14, WEAK_V = 0.3;
+const onMatArea = m => !!m && m[0] > -25 && m[0] < 385 && Math.abs(m[1]) < 165;   // table mm, the mat with 2 cm around it
 
 function hsv(r, g, b) {
   const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
@@ -70,9 +71,10 @@ export function expectedArea(cal, X, Y, yaw = 0) {
 /**
  * Find cubes in an image. img: ImageData of the full 1280 x 720 frame (or any size; it is
  * scaled to the calibration's 1280 x 720 pixel grid). cal: camera from calib.js.
- * Returns [{ colour, X, Y (mm, table frame, assuming level 0), yaw, pixels, areaRatio, ok, bbox, uv (blob centroid, px) }].
+ * Returns [{ colour, X, Y (mm, table frame, assuming level 0), yaw, pixels, areaRatio, ok, bbox, uv (blob centroid, px),
+ * samples (the blob's sampled pixels, px), cell (px area per sample) }].
  */
-export function detectCubes(img, cal, { frameW = 1280, frameH = 720, step = 2, minPixels = 120 } = {}) {
+export function detectCubes(img, cal, { frameW = 1280, frameH = 720, step = 2, minPixels = 120, refine = false } = {}) {
   const { width, height, data } = img;
   const sx = frameW / width, sy = frameH / height;
   const gw = Math.floor(width / step), gh = Math.floor(height / step);
@@ -84,8 +86,10 @@ export function detectCubes(img, cal, { frameW = 1280, frameH = 720, step = 2, m
     const k = COLOUR_RULES.findIndex(r => r.test(h, s, v));
     const kw = k >= 0 ? k : s > WEAK_S && v > WEAK_V ? COLOUR_RULES.findIndex(r => r.hue(h)) : -1;
     if (kw < 0) continue;
-    const m = backProject(cal, x * step * sx, y * step * sy, 0);
-    if (!m || m[0] < -5 || m[0] > 365 || Math.abs(m[1]) > 145) continue;
+    // on the mat (2 cm margin) seen at mat height or at two cubes' height: a cube's top face lands far behind it on
+    // the mat plane, so cubes at the edge, stacked or held would be cut off by the mat-plane test alone
+    const u0 = x * step * sx, v0 = y * step * sy;
+    if (!onMatArea(backProject(cal, u0, v0, 0)) && !onMatArea(backProject(cal, u0, v0, 2 * CUBE_MM))) continue;
     if (k >= 0) label[y * gw + x] = k; else weak[y * gw + x] = kw;
   }
   const seen = new Uint8Array(gw * gh), blobs = [];
@@ -101,6 +105,13 @@ export function detectCubes(img, cal, { frameW = 1280, frameH = 720, step = 2, m
     }
     if (px.length * step * step < minPixels) continue;
     blobs.push({ k, px });
+  }
+  // each blob grown again at full resolution with its own learned colour (refineBlob), back on the sampling grid
+  if (refine) for (const b of blobs) {
+    const full = refineBlob(img, b.px.map(p => [(p % gw) * step, ((p / gw) | 0) * step]));
+    const idx = new Set();
+    for (const [x, y] of full) if (x % step === 0 && y % step === 0 && x / step < gw && y / step < gh) idx.add((y / step) * gw + x / step);
+    if (idx.size >= b.px.length) b.px = [...idx];
   }
   const out = [];
   for (const { k, px } of blobs) {
@@ -125,9 +136,74 @@ export function detectCubes(img, cal, { frameW = 1280, frameH = 720, step = 2, m
     const areaRatio = pixels / expectedArea(cal, X, Y, yaw);
     // uv: the blob's centroid in the image (1280 x 720 grid), for locating the cube in 3D from two cameras (locate3d.js)
     const uv = [sumU / px.length + step * sx / 2, sumV / px.length + step * sy / 2];
-    out.push({ colour: COLOUR_RULES[k].colour, X, Y, yaw, pixels: Math.round(pixels), areaRatio, ok: areaRatio > 0.55 && areaRatio < 1.6, bbox: [minU, minV, maxU, maxV], uv });
+    // the blob's sampled pixels (frame grid, cell centres) and the area each stands for: for fitting a cube's pose to it
+    const samples = px.map(p => [((p % gw) + 0.5) * step * sx, (((p / gw) | 0) + 0.5) * step * sy]);
+    out.push({ colour: COLOUR_RULES[k].colour, X, Y, yaw, pixels: Math.round(pixels), areaRatio, ok: areaRatio > 0.55 && areaRatio < 1.6, bbox: [minU, minV, maxU, maxV], uv, samples, cell: step * step * sx * sy });
   }
   // largest blob per colour first; drop tiny fragments next to a bigger blob of the same colour
   out.sort((a, b) => b.pixels - a.pixels);
   return out.filter((c, i) => !out.slice(0, i).some(o => o.colour === c.colour && Math.hypot(o.X - c.X, o.Y - c.Y) < CUBE_MM));
+}
+
+// ---- refinement: each blob grown again at full resolution with its own colour, in CIELAB, holes closed.
+// Off by default (detectCubes refine): on the edge-case frames it let golden yellow cubes grow into orange (their
+// shaded faces fall in the orange range) and cost several times the time, for little gain on single cubes.
+
+const LIN = Float32Array.from({ length: 256 }, (_, i) => { const c = i / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+const fLab = t => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+/** sRGB -> CIELAB (D65): L lightness, a/b the colour. Light and shadow mostly change L, not the hue angle atan2(b, a). */
+export function rgbToLab(r, g, b) {
+  const R = LIN[r], G = LIN[g], B = LIN[b];
+  const fx = fLab((0.4124 * R + 0.3576 * G + 0.1805 * B) / 0.95047), fy = fLab(0.2126 * R + 0.7152 * G + 0.0722 * B), fz = fLab((0.0193 * R + 0.1192 * G + 0.9505 * B) / 1.08883);
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+const HUE_TOL = 25, CHROMA_MIN = 7;   // degrees around the blob's own hue; chroma the white mat and grey markers stay below
+
+/**
+ * One blob grown again at full resolution in a window around it (half its size on each side): its colour is
+ * learned from its seed pixels (the strict rules): mean hue angle and chroma in CIELAB. Neighbours join while
+ * their hue is within HUE_TOL of it and their chroma reaches a quarter of the blob's (pale lit faces and
+ * shadowed ones of the same cube do, the mat does not). Then small holes (glare, a screw in front) are closed.
+ * seeds: [[x, y]] image px. Returns the mask's pixels as [[x, y]] (image px).
+ */
+export function refineBlob(img, seeds) {
+  const W = img.width, Hh = img.height, d = img.data;
+  let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+  for (const [x, y] of seeds) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+  const mx = Math.max(4, (maxX - minX) / 2), my = Math.max(4, (maxY - minY) / 2);
+  const x0 = Math.max(0, Math.floor(minX - mx)), y0 = Math.max(0, Math.floor(minY - my)), x1 = Math.min(W - 1, Math.ceil(maxX + mx)), y1 = Math.min(Hh - 1, Math.ceil(maxY + my));
+  const w = x1 - x0 + 1, h = y1 - y0 + 1, n = w * h;
+  const A = new Float32Array(n), B = new Float32Array(n);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = 4 * ((y + y0) * W + x + x0), [, a, b] = rgbToLab(d[i], d[i + 1], d[i + 2]);
+    A[y * w + x] = a; B[y * w + x] = b;
+  }
+  // the blob's own colour from its seeds
+  let sa = 0, sb = 0, k = 0;
+  for (const [x, y] of seeds) { const j = (y - y0) * w + (x - x0); if (j >= 0 && j < n) { sa += A[j]; sb += B[j]; k++; } }
+  if (!k) return seeds;
+  const hue0 = Math.atan2(sb / k, sa / k), c0 = Math.hypot(sa / k, sb / k), cMin = Math.max(CHROMA_MIN, 0.25 * c0), cosTol = Math.cos(HUE_TOL * Math.PI / 180);
+  const ca = Math.cos(hue0), cb = Math.sin(hue0);
+  const fits = j => { const c = Math.hypot(A[j], B[j]); return c >= cMin && (A[j] * ca + B[j] * cb) / c >= cosTol; };
+  // grow from the seeds (4-neighbour)
+  const mask = new Uint8Array(n), stack = [];
+  for (const [x, y] of seeds) { const j = (y - y0) * w + (x - x0); if (j >= 0 && j < n && !mask[j]) { mask[j] = 1; stack.push(j); } }
+  while (stack.length) {
+    const j = stack.pop(), x = j % w, y = (j / w) | 0;
+    for (const q of [x > 0 ? j - 1 : -1, x < w - 1 ? j + 1 : -1, y > 0 ? j - w : -1, y < h - 1 ? j + w : -1])
+      if (q >= 0 && !mask[q] && fits(q)) { mask[q] = 1; stack.push(q); }
+  }
+  // close small holes: a pixel with at least 5 of its 8 neighbours in the blob joins (twice)
+  for (let pass = 0; pass < 2; pass++) {
+    const add = [];
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      const j = y * w + x; if (mask[j]) continue;
+      const s = mask[j - 1] + mask[j + 1] + mask[j - w] + mask[j + w] + mask[j - w - 1] + mask[j - w + 1] + mask[j + w - 1] + mask[j + w + 1];
+      if (s >= 5) add.push(j);
+    }
+    for (const j of add) mask[j] = 1;
+  }
+  const out = [];
+  for (let j = 0; j < n; j++) if (mask[j]) out.push([(j % w) + x0, ((j / w) | 0) + y0]);
+  return out;
 }

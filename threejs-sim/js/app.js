@@ -5,7 +5,8 @@ import { createView } from './render.js';
 import { SERVOS, MAT, CAMERA, CAMERAS, CUBE, COLOURS, PLAN, CONTROLLER } from './config.js';
 import { calFromLookAt } from './armtrack.js';
 import { buildWebcam } from './model/tags.js';
-import { buildTagOverlay, buildSeenOverlay } from './tagoverlay.js';
+import { buildTagOverlay, buildSeenOverlay, label } from './tagoverlay.js';
+import { cubeText } from './cubetrack.js';
 import { fk, anglesFromCounts, countsFromAngles, ikTopDown, guardViolations, camToBoard, toolYawAndTilt, Unreachable } from './kinematics.js';
 import { armShapes } from './collision.js';
 import { SimController, ControllerError } from './controller.js';
@@ -718,9 +719,11 @@ const camTab = initCameraTab({
     needsRender = true;
   },
   clearArmTrack: () => { tracked = null; needsRender = true; },
-  onLiveStats: s => { liveStats = s; },
+  onLiveStats: s => { liveStats = s; const m = s.match(/: (\d+) ms/); liveRound = m ? `round ${(m[1] / 1000).toFixed(1).replace('.', ',')} s` : ''; },
+  onLiveCubes: list => { liveCubes = list; needsRender = true; },
+  onGap: g => { liveGapInfo = g; needsRender = true; },
   onRecalibrated: () => { placeMatAndCamera(); needsRender = true; },
-  onLive: on => { $('live-track').classList.toggle('on', on); $('live-track').textContent = on ? '● Live: stop' : '● Live tracking'; needsRender = true; },
+  onLive: on => { if (!on) { liveCubes = null; liveGapInfo = null; } $('live-track').classList.toggle('on', on); $('live-track').textContent = on ? '● Live: stop' : '● Live tracking'; needsRender = true; },
   // the next fit starts where the last one found the arm (the joint panel can be far from the real arm)
   trackStart: () => tracked?.angles,
   linkBase: () => (link ? link.base : ''),
@@ -786,13 +789,97 @@ $('sync-cams').onclick = async () => {
 // ---------------- main loop ----------------
 
 // the real arm as the cameras see it (Camera tab → Arm tracking); while it is followed, the arm model is drawn there
-let tracked = null, liveStats = '';
+let tracked = null, liveStats = '', liveRound = '';
+// the cubes the cameras see right now (live tracking, js/cubetrack.js), at their real height: on the mat, stacked,
+// in the gripper or in the air. While they are shown, the simulation's own cubes are hidden (one set of cubes).
+const liveCubeGroup = new THREE.Group(); liveCubeGroup.visible = false; scene.add(liveCubeGroup);
+const liveCubeItems = [];   // { colour, mesh, txt, key }
+let liveCubes = null, liveGapInfo = null;   // the jaw opening seen by the cameras: { gap, source, holding }
+function showLiveCubes() {
+  const on = !!liveCubes && camTab.live;
+  liveCubeGroup.visible = on;
+  for (const m of cubeMeshes.values()) m.visible = !on;
+  if (!on) return;
+  liveCubes.forEach((c, i) => {
+    let it = liveCubeItems[i];
+    if (!it || it.colour !== c.colour) {
+      if (it) { liveCubeGroup.remove(it.mesh); if (it.txt) liveCubeGroup.remove(it.txt); }
+      it = liveCubeItems[i] = { colour: c.colour, mesh: buildCube(c.colour), txt: null, key: '' };
+      liveCubeGroup.add(it.mesh);
+    }
+    it.mesh.visible = true;
+    it.mesh.position.set(...(c.shown || c.board));
+    it.mesh.rotation.set(0, 0, (c.yaw || 0) * Math.PI / 180);
+    const key = cubeText(c);
+    if (key !== it.key) {                                    // labels are textures: rebuilt only when the text changes
+      if (it.txt) { liveCubeGroup.remove(it.txt); it.txt.material.map.dispose(); it.txt.material.dispose(); }
+      it.txt = label(key, c.colour); it.txt.scale.multiplyScalar(0.8); it.txt.frustumCulled = false; liveCubeGroup.add(it.txt);
+      it.key = key;
+    }
+    it.txt.visible = true;
+    const p = c.shown || c.board; it.txt.position.set(p[0] + 1.6, p[1], p[2] + 1.6);
+  });
+  for (let i = liveCubes.length; i < liveCubeItems.length; i++) { liveCubeItems[i].mesh.visible = false; if (liveCubeItems[i].txt) liveCubeItems[i].txt.visible = false; }
+}
+
 const following = () => !!tracked && $('cam-arm-ghost').checked;
 $('cam-arm-ghost').addEventListener('change', () => { needsRender = true; });
 setInterval(() => { if (following()) needsRender = true; }, 1000);   // keeps the overlay's age current
+// ---- large readout while the arm is tracked: grip point in mat coordinates, jaw axis, tilt, opening, joints, cubes;
+// "Remember" adds the current values to a list (kept in this browser)
+const MEM_KEY = 'pxsim.remembered.v1';
+let remembered = [];
+try { remembered = JSON.parse(localStorage.getItem(MEM_KEY)) || []; } catch { remembered = []; }
+const saveMem = () => { try { localStorage.setItem(MEM_KEY, JSON.stringify(remembered)); } catch { /* kept for this page only */ } };
+const toMat = p => [(p[1] - MAT.sToEdge) * 10, -p[0] * 10, p[2] * 10];          // board cm -> mat (table) mm
+const n0 = v => Math.round(v).toString().replace('-', '−'), n1 = v => v.toFixed(1).replace('.', ',').replace('-', '−');
+function readoutNow() {
+  if (!following()) return null;
+  const f = fk(tracked.angles), x = [f.hand.R[0], f.hand.R[3], f.hand.R[6]];
+  let jaw = Math.atan2(-x[0], x[1]) * 180 / Math.PI; jaw = ((jaw + 90) % 180 + 180) % 180 - 90;   // jaw axis in the mat frame, folded
+  return {
+    time: new Date().toLocaleTimeString(),
+    grip: toMat(f.grasp).map(v => Math.round(v)), jaw: Math.round(jaw), tilt: Math.round(toolYawAndTilt(f.hand).tilt),
+    open: liveGapInfo?.gap != null ? +liveGapInfo.gap.toFixed(1) : null,
+    joints: Object.fromEntries(['s1', 's2', 's3', 's4', 's5'].map(j => [j, +tracked.angles[j].toFixed(1)])),
+    cubes: (liveCubes || []).map(c => { const m = toMat(c.shown || c.board); return { colour: c.colour, at: m.map(v => Math.round(v)), yaw: Math.round(c.yaw || 0), where: c.where }; }),
+  };
+}
+let readoutKey = '', showDetails = false;   // the detailed tracking box (bottom right) only on request
+function liveReadout() {
+  const box = $('live-readout'), r = readoutNow();
+  box.hidden = !r;
+  if (!r) return;
+  const key = JSON.stringify({ ...r, time: 0 }) + remembered.length + showDetails + liveRound + tracked.rms.toFixed(1) + JSON.stringify(tracked.seen) + tracked.miss;
+  if (key === readoutKey) return;                                       // redraw only when something changed
+  readoutKey = key;
+  const cube = c => `<div class="ro-cube"><span class="chip" style="background:${c.colour}"></span>${c.colour} <b>X ${n0(c.at[0])} · Y ${n0(c.at[1])} · Z ${n0(c.at[2])}</b> mm · ${n0(c.yaw)}° · ${{ mat: 'on the mat', desk: 'on the desk', stack: 'stacked', gripper: 'in the gripper', air: 'in the air' }[c.where]}</div>`;
+  box.innerHTML = `<div class="ro-head"><span>${camTab.live ? 'LIVE · ' : ''}grip point, mat mm</span><span><button data-ro="details" title="The detailed tracking box: errors per tag, round timing, tracked minus joint panel">${showDetails ? 'Hide details' : 'Details'}</button> <button data-ro="remember" title="Add the current values to the list below">★ Remember</button></span></div>
+    <div class="ro-big">X <b>${n0(r.grip[0])}</b> Y <b>${n0(r.grip[1])}</b> Z <b>${n0(r.grip[2])}</b></div>
+    <div class="ro-mid">jaw axis <b>${n0(r.jaw)}°</b> · tilt <b>${n0(r.tilt)}°</b>${r.open != null ? ` · open <b>${n1(r.open)} cm</b>` : ''}</div>
+    <div class="ro-small">${tracked.seen.map(c => `${c.name} ${c.ids.join(' ') || '–'}`).join(' · ')} · fit ${n1(tracked.rms)} px${tracked.miss ? ' · <span class="miss">last round: too few tags</span>' : ''}${liveRound ? ` · ${liveRound}` : ''}</div>
+    <div class="ro-small">${Object.entries(r.joints).map(([j, v]) => `${j.toUpperCase()} ${n1(v)}°`).join(' · ')}</div>
+    ${r.cubes.map(cube).join('')}
+    ${remembered.length ? `<div class="ro-list-head"><span>Remembered (${remembered.length})</span><span><button data-ro="copy" title="Copy the list as CSV">Copy</button> <button data-ro="clear">Clear</button></span></div>
+    <div class="ro-list">${remembered.slice().reverse().map((m, i) => `<div><b>${remembered.length - i}</b> ${m.time} · X ${n0(m.grip[0])} Y ${n0(m.grip[1])} Z ${n0(m.grip[2])} · ${n0(m.jaw)}°${m.open != null ? ` · ${n1(m.open)} cm` : ''}${m.cubes.map(c => ` · ${c.colour} ${c.at.map(n0).join('/')} ${n0(c.yaw)}°`).join('')}</div>`).join('')}</div>` : ''}`;
+}
+$('live-readout').addEventListener('click', e => {
+  const what = e.target.closest('[data-ro]')?.dataset.ro;
+  if (what === 'remember') { const r = readoutNow(); if (r) { remembered.push(r); saveMem(); log(`remembered: grip X ${r.grip[0]} Y ${r.grip[1]} Z ${r.grip[2]} mm, jaw axis ${r.jaw}°`, 'ok'); } }
+  if (what === 'clear') { remembered = []; saveMem(); }
+  if (what === 'details') showDetails = !showDetails;
+  if (what === 'copy') {
+    const rows = [['#', 'time', 'grip X mm', 'grip Y mm', 'grip Z mm', 'jaw axis deg', 'tilt deg', 'open cm', 'S1', 'S2', 'S3', 'S4', 'S5', 'cubes']]
+      .concat(remembered.map((m, i) => [i + 1, m.time, ...m.grip, m.jaw, m.tilt, m.open ?? '', ...['s1', 's2', 's3', 's4', 's5'].map(j => m.joints[j]), m.cubes.map(c => `${c.colour} ${c.at.join('/')} ${c.yaw}deg ${c.where}`).join('; ')]));
+    const text = rows.map(r => r.join('\t')).join('\n');
+    try { navigator.clipboard.writeText(text); toast('List copied (tab separated, pastes into a spreadsheet)'); } catch { toast('Copy failed'); }
+  }
+  readoutKey = ''; needsRender = true;
+});
+
 function trackHud() {
   const box = $('track-hud');
-  box.hidden = !following();
+  box.hidden = !following() || !showDetails;
   if (box.hidden) return;
   const T = tracked, a0 = anglesFromCounts(ctl.position), s = v => (v >= 0 ? '+' : '') + v.toFixed(1);
   const ago = (Date.now() - T.t) / 1000;
@@ -802,6 +889,8 @@ function trackHud() {
     T.seen.map(c => `${c.name}: ${c.ids.length ? c.ids.length + ' tag' + (c.ids.length > 1 ? 's' : '') : 'no tags'}`).join(' · ') + '<br>' +
     `fit ${T.rms.toFixed(1)} px over ${T.views} tag view${T.views === 1 ? '' : 's'} · ${ago < 2 ? 'now' : `${ago.toFixed(0)} s ago`}` +
     (T.miss ? ' · <span class="miss">last round: too few tags, pose kept</span>' : '') + '<br>' +
+    (camTab.live && liveGapInfo?.gap != null ? `gripper: ${liveGapInfo.gap.toFixed(1).replace('.', ',')} cm open (${liveGapInfo.source}${liveGapInfo.holding ? ', holds a cube' : ''})<br>` : '') +
+    (camTab.live && liveCubes ? `cubes: ${liveCubes.length ? liveCubes.map(cubeText).join(' · ') : 'none seen by two cameras'}${liveCubes.onArm?.length ? ` (${liveCubes.onArm.length} coloured blob${liveCubes.onArm.length > 1 ? 's' : ''} on the arm left out)` : ''}<br>` : '') +
     (camTab.live && liveStats ? `<span style="color:var(--muted)">${liveStats}</span><br>` : '') + (onReal() ? 'tracked − real arm counts: ' : 'tracked − joint panel (simulation, not the real arm): ') + ['s1', 's2', 's3', 's4', 's5'].filter(j => T.free.includes(j)).map(j => `${j.toUpperCase()} ${s(T.angles[j] - a0[j])}°`).join(' ');
 }
 let needsRender = true, last = performance.now(), lastContacts = new Set(), eventIdx = 0, lastCubeKey = '';
@@ -847,12 +936,14 @@ function frame(now) {
   if (needsRender) {
     // only one arm: where the cameras see it while tracking is followed, else the commanded (simulated) pose
     const a = following() ? tracked.angles : anglesFromCounts(ctl.position);
-    arm.setPose(a, world.gap);
+    arm.setPose(a, following() && liveGapInfo?.gap != null ? liveGapInfo.gap : world.gap);
     if (tagOverlay.group.visible) tagOverlay.update(a);
     ghost.root.visible = false;
     seenOverlay.group.visible = following();
     if (following()) { const seen = {}; for (const x of tracked.tagErr || []) (seen[x.id] ??= []).push(x); seenOverlay.update(a, seen); }
+    showLiveCubes();
     trackHud();
+    liveReadout();
     syncCubeMeshes();
     const hitNames = new Set(world.contacts.flatMap(k => [k.a, k.b]));
     updateShapes(armShapes(world.frames, world.gap), hitNames, $('show-shapes').checked);
