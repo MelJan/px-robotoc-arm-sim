@@ -25,7 +25,7 @@ How the layout was measured (in three steps, each better than the last):
 - **Joint axis, 2026-10-13:** the S5 joint can only turn the gripper about one axis fixed in the wrist. Three poses with S5 120° apart (two live snapshot pairs and the close-up photos; the team had moved the arm in between) were fitted with `js/jointfit.js estimateJointAxis`.
   - The axis came out 10,6° and 0,5 cm from the model's.
   - The corrected layout brought the wrist + gripper pair fit from 17–50 px down to 3–9 px.
-- **Still open:** how far along the S5 axis the gripper tags sit relative to the flange cannot be seen from joint motion. The fit puts 107 about 2,6 cm below the flange, and the photos roughly agree, but the gripper model puts its S6 servo higher. **Measure the distance from the S5 hub to tag 107's centre.**
+- **Still open:** how far along the S5 axis the gripper tags sit relative to the flange cannot be seen from joint motion. The fit puts 107 about 2,6 cm below the flange, and the photos roughly agree, but the gripper model puts its S6 servo higher. **What to measure and where: [`measure-arm-tags.md`](measure-arm-tags.md).** A fourth live pose (the arm turned to its left) confirmed the layout to 0,5° / 0,14 cm on the S5 axis; across leave-one-out fits, tag 107 moves by up to about 1 cm, which the measurement settles.
 
 Older notes on the layout:
 - 109 and 107 are placed from the arm model.

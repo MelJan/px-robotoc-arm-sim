@@ -2,6 +2,13 @@
 
 Branch `feature/threejs-sim`. Newest first. Dates are when the change was committed.
 
+## 2026-10-13 (night): Taller base, tag layout checked on a fourth pose, measuring guide
+
+- **Base:** the top plate is now 3,3 cm high (from the photos). The S1 shaft and the S2 axis keep their heights. Model, collision and photo fit use `config.js BASE`.
+- **Planner:** when no single-joint order is free of contacts, it goes up through the raised arm, across and down.
+- **Tag layout:** a fourth live pose confirms it (the S5 axis 0,5° / 0,14 cm from the model's, without the one weak pose).
+- **[`docs/measure-arm-tags.md`](docs/measure-arm-tags.md):** what to measure on the arm (S5 hub to tag 107, and so on), with an annotated photo.
+
 ## 2026-10-13 (evening): Joints combine tags across parts; S5 axis calibrated; full-screen options
 
 - **Joint fit** (`js/jointfit.js`):
