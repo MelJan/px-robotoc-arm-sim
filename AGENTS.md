@@ -5,7 +5,7 @@ Start with `HANDOVER.md` (state and open items) and `threejs-sim/README.md` (the
 ## Safety
 
 - **Never command the real arm** (controller at http://10.102.4.103:8765) unless the user says so in that moment. Keep even reads (state, camera snapshots, video) to a minimum: other people use the arm, and the camera and servos can overheat.
-- Test against the mock: `node threejs-sim/server.mjs --mock`.
+- Test against the shared simulation: `node threejs-sim/server.mjs` (the API in `docs/arm-api.md`; it starts on the simulated arm). Never switch it to the real arm (`POST /api/backend {"target": "real"}`) without the user's go-ahead.
 - The simulator server is read only towards a real controller unless it is started with `--allow-motion`.
 
 ## Checks

@@ -127,14 +127,17 @@ The tracker hook (`addTracker`) is where the gripper ArUco tracker for the HOME-
 The illustration is not to scale (its link ratio is 0,94 against the real 0,83), so neither value is a measurement.
 A live check already agrees on S1: with S1 = 505 counts the sim arm and the real arm in the camera frame point the same way.
 
-## 8. Safety model
+## 8. Safety model and the shared API
+
+The server is the arm: `/api` is the controller's low-level API, answered by a backend switched for everybody (`docs/arm-api.md`). The page is one client of it.
 
 | Situation | What can happen |
 |-----------|-----------------|
-| `server.mjs --mock` | Everything, against the mock |
-| `server.mjs --controller <pi>` | Read only: state (one GET per 1,5 s after "Connect"), camera snapshots one at a time on request. All POSTs except `/api/stop` are refused by the server; the page disables control |
-| `server.mjs --controller <pi> --allow-motion`, or served by the controller | The operator must tick "I am at the emergency stop…". Every joint move and HOME/PARK is simulated first and refused if the sim predicts a collision. "Send to arm" re-plans from the arm's real counts, needs a passing sim check and a confirmation, and then uses single-joint `move` calls through the controller's own guards |
-| Emergency stop button | Always stops the sim, and sends `/api/stop` when connected |
+| `server.mjs` | Everything, on the shared simulated arm. A collision stops it like an emergency stop; `power_on` re-arms it |
+| `server.mjs --controller <pi>` | The real arm can be selected, read only: state and `/api/stop` pass, every other POST gets HTTP 409 |
+| `server.mjs --controller <pi> --allow-motion` | Real mode moves the arm. Every motion call is first played on a copy of the simulation synced to the real arm's state and refused (409) if the arm would hit itself or the board. `stop` is never blocked. The page shows a red banner and frame, and asks once before a plan or scenario |
+| Plans and scenarios | The page's planner computes each trajectory in the simulation (single-joint moves, as the API sends them) and sends it to the active backend; the server checks every call again |
+| Emergency stop button | `POST /api/stop` to the active backend |
 
 ## 9. Integration into the controller's web page
 

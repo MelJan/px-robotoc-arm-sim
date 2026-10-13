@@ -366,5 +366,5 @@ export function initCameraTab(ctx) {
     $('cam-source').value = camera && camera !== 'mock' ? 'live' : 'saved';
     loadSource();
   }
-  return { update, render, markDirty: () => { dirty = true; }, get calibration() { return cal; }, addTracker, grabFrame, stopVideo, activate };
+  return { update, render, markDirty: () => { dirty = true; }, get calibration() { return cal; }, get detections() { return detections; }, addTracker, grabFrame, stopVideo, activate };
 }

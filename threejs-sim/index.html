@@ -14,7 +14,13 @@
   <div class="brand">
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 20h8M8 20v-4l4-6 5 2m-5-2 1-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="10" r="1.6" fill="currentColor"/><circle cx="17" cy="12" r="1.4" fill="currentColor"/></svg>
     <span>Arm simulator</span>
-    <span id="mode-badge" class="badge">simulation</span>
+  </div>
+  <div class="target-wrap">
+    <div class="target" role="group" aria-label="Where commands go">
+      <button id="target-sim" class="on" title="Buttons, joints and tasks drive the simulation only">Simulation</button>
+      <button id="target-real" title="Connect to the real arm and, after a safety checklist, let this page move it">Real arm</button>
+    </div>
+    <button id="link-pill" class="pill" title="Real arm connection">real arm: not connected</button>
   </div>
   <div class="hdr-right">
     <span id="hud" class="hud"></span>
@@ -25,6 +31,13 @@
       EMERGENCY STOP</button>
   </div>
 </header>
+
+<div id="live-banner" class="live-banner" hidden>
+  <span id="live-banner-text"></span>
+  <span class="grow"></span>
+  <button id="live-power" hidden>Power on (PARK → HOME)</button>
+  <button id="live-off">Back to simulation</button>
+</div>
 
 <main>
   <section id="view">
@@ -37,7 +50,7 @@
       <span class="sep"></span>
       <label><input type="checkbox" id="show-path" checked> Path</label>
       <label><input type="checkbox" id="show-shapes"> Collision shapes</label>
-      <label><input type="checkbox" id="show-ghost" checked> Live ghost</label>
+      <input type="checkbox" id="show-ghost" hidden>
     </div>
     <div id="contacts" class="contacts" hidden></div>
     <div id="toast" class="toast" hidden></div>
@@ -59,9 +72,11 @@
         </div>
         <div class="row wrap">
           <button id="plan-btn" class="primary big">Plan</button>
-          <button id="run-sim" class="big" disabled>Run in sim</button>
+          <button id="run-sim" class="big" disabled>▶ Run</button>
           <button id="demo-btn" class="accent big" title="Picks and stacks cubes with the planner, then drops cubes onto the tower to show the physics (simulation only)">▶ Demo: build a tower</button>
+          <button id="demo-reset" class="big" title="Stop the demo, put the cubes of the selected scenario back and the arm to HOME">↺ Reset</button>
         </div>
+        <p id="real-reason" class="note"></p>
         <div id="plan-out" class="plan-out"></div>
         <details class="sub">
           <summary>Options</summary>
@@ -74,14 +89,35 @@
             <label class="inline">Demo speed <input id="demo-speed" type="number" min="1" max="100" value="40"> counts/s</label>
           </div>
           <div class="row wrap">
-            <button id="send-live" class="danger" disabled title="Needs a live connection with control enabled">Send to arm</button>
             <button id="export-plan" disabled>Copy as demo JSON</button>
           </div>
         </details>
       </section>
 
+      <section class="card">
+        <h2>Scenario <small>block layout and the steps to execute</small></h2>
+        <div class="row wrap">
+          <div class="target small" role="group" aria-label="Where the cubes come from">
+            <button id="scn-source-pre" class="on">Predefined</button>
+            <button id="scn-source-live">Live (camera)</button>
+          </div>
+          <span id="scn-pre"><select id="scn-select"></select></span>
+        </div>
+        <p id="scn-about" class="note"></p>
+        <div id="scn-live" hidden>
+          <p class="note">Cubes from the last camera frame (Camera tab → Detect). Steps, one task per line:</p>
+          <textarea id="scn-tasks" rows="3" placeholder="blue on orange&#10;yellow on blue"></textarea>
+        </div>
+        <ol id="scn-steps" class="steps-list"></ol>
+        <div class="row wrap">
+          <button id="scn-reset">↺ Reset</button>
+          <button id="scn-sim" class="primary">▶ Run</button>
+        </div>
+        <p id="scn-state" class="note"></p>
+      </section>
+
       <details open>
-        <summary>Joints <small>servo counts at 60 Hz, like the controller</small></summary>
+        <summary>Joints <small>servo counts at 60 Hz, like the controller</small> <span id="joints-target" class="badge">→ simulation</span></summary>
         <div id="joints"></div>
         <div class="row wrap">
           <button id="go-home">Go HOME</button>
@@ -107,23 +143,11 @@
       </details>
 
       <details>
-        <summary>Live controller <small id="live-status">not connected</small></summary>
-        <div class="row">
-          <input id="live-url" type="text" placeholder="same origin (served by the controller or server.mjs)">
-          <button id="live-connect">Connect</button>
-        </div>
+        <summary>Robot API <small id="live-status">not connected</small></summary>
         <div class="row wrap">
-          <label class="inline"><input type="checkbox" id="live-follow"> Sim follows the arm</label>
-          <button id="live-demo" disabled>Load its demo into the sim</button>
+          <button id="open-real">Backend and API…</button>
         </div>
-        <div class="armbox">
-          <label><input type="checkbox" id="live-enable" disabled> I am at the emergency stop, the arm's path is clear, and I want this page to move the real arm.</label>
-          <div class="row wrap">
-            <button id="live-home" class="danger" disabled>Arm: Go HOME</button>
-            <button id="live-park" class="danger" disabled>Arm: Go PARK</button>
-          </div>
-        </div>
-        <p class="note">Commands go through the controller's own checks. Sending needs the page served by the controller or by <code>server.mjs --controller … --allow-motion</code>.</p>
+        <p class="note">This page, scripts and other tools all use the same robot API on this server; the header switch picks the arm behind it for everybody.</p>
       </details>
 
       <details>
@@ -238,5 +262,31 @@
 </main>
 
 <script type="module" src="js/app.js"></script>
+<dialog id="real-dlg" class="dlg">
+  <form method="dialog">
+    <h2>Robot API and backend</h2>
+    <p id="dlg-backend"></p>
+    <h3>Use it from your own code</h3>
+    <pre class="api">GET  /api/state
+POST /api/move      {"channel": 0, "target": 400}
+POST /api/go_pose   {"name": "HOME"}
+POST /api/stop      {}
+GET  /api/backend           which arm answers
+POST /api/backend   {"target": "sim" | "real"}</pre>
+    <p class="note">POSTs need <code>Content-Type: application/json</code> and <code>Origin</code> set to this server, like the real controller. With the real arm active, every motion call is simulated first and answered with HTTP 409 if it would collide.</p>
+    <div class="row end"><button value="close">Close</button></div>
+  </form>
+</dialog>
+
+<dialog id="send-dlg" class="dlg">
+  <form method="dialog">
+    <h2 id="send-title">Move the real arm?</h2>
+    <div id="send-body"></div>
+    <div class="row end">
+      <button value="cancel">Cancel</button>
+      <button id="send-go" value="go" class="danger-solid" autofocus>Send to the arm</button>
+    </div>
+  </form>
+</dialog>
 </body>
 </html>

@@ -58,6 +58,9 @@ export class LiveLink {
   move(channel, target) { return this.post('move', { channel, target, first_clear: false }); }
   jog(channel, direction) { return this.post('jog', { channel, direction }); }
   goPose(name) { return this.post('go_pose', { name }); }
+  powerOn() { return this.post('power_on', {}); }
+  /** Fresh state (same name as SimArm.read, see armapi.js). */
+  read() { return this.poll(); }
   emergencyStop() { this.abort = true; return this.post('stop', {}); }
 
   async waitIdle(timeoutS) {

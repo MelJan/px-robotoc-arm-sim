@@ -237,6 +237,8 @@ export function verify(world, plan, start, { mode = 'demo', speed = 20, servos =
       if (!prev || k.sep < prev.sep) contacts.set(key, { a: k.a, b: k.b, sep: k.sep, step: prev ? prev.step : label, t: prev ? prev.t : t });
     }
   }
+  // a stored trajectory (no pick/place target): it passes when nothing collides
+  if (!plan.info) return { ok: contacts.size === 0, duration: t, contacts: [...contacts.values()], events: w.events, offset: 0, final: w.snapshot() };
   const c = w.cube(plan.info.pick);
   const [tx, ty, tz] = plan.info.target;
   const off = Math.hypot(c.p[0] - tx, c.p[1] - ty);

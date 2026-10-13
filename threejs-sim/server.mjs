@@ -1,27 +1,33 @@
 #!/usr/bin/env node
-// Static server for the three.js simulator, with two optional /api backends. No dependencies.
+// Arm server: the three.js simulator page plus ONE robot API for everybody. No dependencies.
 //
-//   node server.mjs                                   simulator only, http://127.0.0.1:8770/
-//   node server.mjs --mock                            + a mock controller (same API, same motion rules)
+// /api is the robot's low-level API (lutich/robot-arm docs/api.md: GET /api/state, POST /api/move,
+// /api/jog, /api/go_pose, /api/stop, /api/power_on, /api/demo/*, ...). Behind it sits a switchable backend:
+//   sim   a shared simulated arm in this process (controller emulation, cubes, physics, collision)
+//   real  the controller on the Pi (--controller); every call that can move the arm is first played
+//         in the simulation and blocked (HTTP 409) if it collides; /api/stop always goes through
+// GET /api/backend tells which is active, POST /api/backend {"target": "sim" | "real"} switches it.
+// /sim/world and /sim/scene show and set the shared simulation's cubes (viewers, scenario resets).
+//
+//   node server.mjs                                   page + simulated arm, http://127.0.0.1:8770/
 //   node server.mjs --controller http://10.102.4.103:8765
-//                                                     + forwards /api/* to the real controller:
-//                                                       GETs and /api/stop always, every other POST
-//                                                       only with --allow-motion
-//   node server.mjs --mock --camera http://10.102.4.103:8765
-//                                                     mock arm + the REAL camera: forwards only
-//                                                       GET /api/camera/* (status, snapshot, video)
-//   --port 8770  --host 127.0.0.1
+//                                                     + the real arm as a second backend, read only:
+//                                                       GETs and /api/stop, motion blocked
+//   node server.mjs --controller http://10.102.4.103:8765 --allow-motion
+//                                                     + motion to the real arm (after the sim check)
+//   node server.mjs --camera http://10.102.4.103:8765 the REAL camera for /api/camera/* (GET only)
+//   --port 8770  --host 127.0.0.1                     (--mock is accepted and changes nothing)
 //
-// The real controller only accepts POSTs whose Origin is its own address; the proxy sends
-// that Origin, so the page here can command the arm once --allow-motion is given.
-// It also sends no CORS headers, so a page from elsewhere can show its video but cannot read
-// the pixels for tracking; going through this server (same origin) solves that.
+// The real controller only accepts POSTs whose Origin is its own address; this server sends it.
+// POSTs to this server need Origin: http://<this host> and Content-Type: application/json, like the
+// real controller, so code written against one works against the other.
 
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SimController, ControllerError } from './js/controller.js';
+import { ControllerError } from './js/controller.js';
+import { ArmBackend, Blocked } from './js/armbackend.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.dirname(ROOT);
@@ -33,8 +39,6 @@ const PORT = Number(opt('--port', 8770));
 const HOST = opt('--host', '127.0.0.1');
 const CONTROLLER = opt('--controller', null);
 const ALLOW_MOTION = flag('--allow-motion');
-const MOCK = flag('--mock');
-if (MOCK && CONTROLLER) { console.error('use either --mock or --controller'); process.exit(2); }
 // Where camera reads go: the controller if given, else --camera, else the mock's saved frame.
 const CAMERA = CONTROLLER || opt('--camera', null);
 
@@ -99,52 +103,104 @@ async function proxy(req, res, base = CONTROLLER, cameraOnly = false) {
   if (isPost) { console.log(`→ ${target.pathname} ${body}`); upstream.end(body); } else upstream.end();
 }
 
-// ---------------- mock controller ----------------
+// ---------------- arm backend: shared simulation + optional real controller ----------------
 
-const mock = MOCK ? new SimController() : null;
-if (mock) {
-  let last = performance.now();
-  setInterval(() => { const now = performance.now(); mock.update((now - last) / 1000); last = now; }, 20);
+// The real controller, reached like the proxy above (its own Host and Origin). GET state, POST actions.
+function realRequest(method, p, body) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(`/api/${p}`, CONTROLLER);
+    const data = method === 'POST' ? Buffer.from(JSON.stringify(body || {})) : null;
+    const rq = http.request(target, {
+      method, timeout: 20000,
+      headers: { Host: target.host, ...(data ? { Origin: `${target.protocol}//${target.host}`, 'Content-Type': 'application/json', 'Content-Length': data.length } : {}) },
+    }, up => {
+      const chunks = [];
+      up.on('data', c => chunks.push(c));
+      up.on('end', () => {
+        let json = {}; try { json = JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch { /* not JSON */ }
+        if (up.statusCode >= 400) { const e = new Error(json.error || json.detail || `controller: HTTP ${up.statusCode}`); e.status = up.statusCode; reject(e); }
+        else resolve(json);
+      });
+    });
+    rq.on('timeout', () => rq.destroy(new Error('controller timed out')));
+    rq.on('error', reject);
+    rq.end(data || undefined);
+  });
 }
 
-const MOCK_ACTIONS = {
-  move: b => mock.move(b.channel, b.target),
-  jog: b => mock.jog(b.channel, b.direction),
-  go_pose: b => mock.go_pose(b.name),
-  stop: b => mock.stop(b.reason || 'stop'),
-  power_on: () => mock.power_on(),
-  power_off: () => mock.power_off(),
-  settings: b => mock.settings_(b.step_size, b.demo_speed),
-  limits: b => mock.limits(b.channel, b.low, b.high),
-  'demo/add': b => mock.demo_add(b.name),
-  'demo/replace': b => mock.demo_replace(b.index),
-  'demo/remove': b => mock.demo_remove(b.index),
-  'demo/rename': b => mock.demo_rename(b.index, b.name),
-  'demo/reorder': b => mock.demo_reorder(b.index, b.direction),
-  'demo/next': () => mock.demo_next(),
-  'demo/run': () => mock.demo_run(),
-  'demo/pause': () => mock.demo_pause(),
-  'demo/resume': () => mock.demo_resume(),
-  'demo/restart': () => mock.demo_restart(),
-};
+const backend = new ArmBackend({
+  real: CONTROLLER ? { get: p => realRequest('GET', p), post: (p, b) => realRequest('POST', p, b) } : null,
+  realName: CONTROLLER, allowMotion: ALLOW_MOTION, log: t => console.log(t),
+});
+{
+  let last = performance.now();
+  setInterval(() => { const now = performance.now(); backend.tick(Math.min(0.1, (now - last) / 1000)); last = now; }, 20);
+}
 
-async function mockApi(req, res) {
+async function readJson(req) {
+  try { return JSON.parse((await readBody(req)).toString() || '{}'); } catch { return null; }
+}
+
+function sendError(res, e) {
+  if (e instanceof Blocked) return sendJson(res, 409, { error: e.message, blocked: true });
+  if (e instanceof ControllerError) return sendJson(res, 400, { error: e.message });
+  if (e.status) return sendJson(res, e.status, { error: e.message });
+  console.error(e);
+  return sendJson(res, 502, { error: e.message });
+}
+
+// /api: the robot's low-level API, answered by the active backend; /api/backend switches it.
+async function armApi(req, res) {
   const p = new URL(req.url, 'http://x').pathname.replace(/^\/api\//, '');
-  if (req.method === 'GET' && p === 'state') return sendJson(res, 200, { ...mock.state(), mode: 'mock' });
-  if (req.method === 'GET' && p === 'camera/snapshot.jpg') {
-    const f = path.join(REPO, 'docs', 'images', 'photos', 'controller-camera-2026-10-12.jpg');
-    if (!fs.existsSync(f)) return sendJson(res, 404, { error: 'no snapshot' });
-    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' });
-    return fs.createReadStream(f).on('error', () => res.destroy()).pipe(res);
+  if (p.startsWith('camera/')) {
+    if (CAMERA) return await proxy(req, res, CAMERA, true);
+    return mockCamera(req, res, p);
   }
-  // Mock camera: the saved frame as status, snapshot and a 2 fps MJPEG stream (multipart, like the OAK route).
-  if (req.method === 'GET' && p === 'camera/status') {
+  try {
+    if (p === 'backend') {
+      if (req.method === 'GET') return sendJson(res, 200, backend.info());
+      const body = await readJson(req);
+      if (!body) return sendJson(res, 400, { error: 'Invalid JSON' });
+      return sendJson(res, 200, await backend.setTarget(body.target));
+    }
+    if (req.method === 'GET') return sendJson(res, 200, await backend.get(p));
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'GET or POST only' });
+    // Same rules as the real controller: same-origin caller, JSON body.
+    if (req.headers.origin !== `http://${req.headers.host}`) return sendJson(res, 403, { error: 'Same-origin page required (send Origin: http://<this host>)' });
+    if (!(req.headers['content-type'] || '').startsWith('application/json')) return sendJson(res, 400, { error: 'Content-Type must be application/json' });
+    const body = await readJson(req);
+    if (!body) return sendJson(res, 400, { error: 'Invalid JSON' });
+    return sendJson(res, 200, await backend.post(p, body));
+  } catch (e) { return sendError(res, e); }
+}
+
+// /sim: the shared simulation's scene, for viewers and scenario resets (not part of the robot API).
+async function simApi(req, res) {
+  const p = new URL(req.url, 'http://x').pathname;
+  if (p === '/sim/world' && req.method === 'GET') return sendJson(res, 200, backend.worldState());
+  if (p === '/sim/scene' && req.method === 'POST') {
+    const body = await readJson(req);
+    if (!body || !Array.isArray(body.cubes)) return sendJson(res, 400, { error: 'body: { "cubes": [[colour, x, y, level, yaw], ...] }' });
+    backend.setScene(body.cubes);
+    return sendJson(res, 200, backend.worldState());
+  }
+  return sendJson(res, 404, { error: 'Unknown path' });
+}
+
+// Mock camera: the saved frame as status, snapshot and a 2 fps MJPEG stream (multipart, like the OAK route).
+function mockCamera(req, res, p) {
+  const f = path.join(REPO, 'docs', 'images', 'photos', 'controller-camera-2026-10-12.jpg');
+  if (req.method !== 'GET') return sendJson(res, 405, { error: 'GET only' });
+  if (p === 'camera/status') {
     return sendJson(res, 200, { enabled: true, source: 'mock', available: true, frame_age_ms: 0,
       latest_frame: { delivered_fps: 2, time_us: 30000, iso: 200, lens_position: 65, captured_at: new Date().toISOString() } });
   }
-  if (req.method === 'GET' && p === 'camera/stream.mjpg') {
-    const f = path.join(REPO, 'docs', 'images', 'photos', 'controller-camera-2026-10-12.jpg');
-    if (!fs.existsSync(f)) return sendJson(res, 404, { error: 'no frame' });
+  if (!fs.existsSync(f)) return sendJson(res, 404, { error: 'no frame' });
+  if (p === 'camera/snapshot.jpg') {
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' });
+    return fs.createReadStream(f).on('error', () => res.destroy()).pipe(res);
+  }
+  if (p === 'camera/stream.mjpg') {
     const jpg = fs.readFileSync(f);
     res.writeHead(200, { 'Content-Type': 'multipart/x-mixed-replace; boundary=frame', 'Cache-Control': 'no-store' });
     const send = () => res.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpg.length}\r\n\r\n`) && res.write(jpg) && res.write('\r\n');
@@ -153,14 +209,7 @@ async function mockApi(req, res) {
     res.on('close', () => clearInterval(timer));
     return;
   }
-  if (req.method !== 'POST' || !MOCK_ACTIONS[p]) return sendJson(res, 404, { error: 'Unknown path' });
-  // Same rules as the real controller: same-origin page, JSON body.
-  if (req.headers.origin !== `http://${req.headers.host}`) return sendJson(res, 403, { error: 'Same-origin page required' });
-  if (!(req.headers['content-type'] || '').startsWith('application/json')) return sendJson(res, 400, { error: 'Content-Type must be application/json' });
-  let body;
-  try { body = JSON.parse((await readBody(req)).toString() || '{}'); } catch { return sendJson(res, 400, { error: 'Invalid JSON' }); }
-  try { MOCK_ACTIONS[p](body); return sendJson(res, 200, { ok: true, result: true }); }
-  catch (e) { if (e instanceof ControllerError) return sendJson(res, 400, { error: e.message }); throw e; }
+  return sendJson(res, 404, { error: 'Unknown path' });
 }
 
 // ---------------- server ----------------
@@ -168,12 +217,10 @@ async function mockApi(req, res) {
 const server = http.createServer(async (req, res) => {
   try {
     if (req.url.startsWith('/api/')) {
-      if (CONTROLLER) return await proxy(req, res);
-      if (CAMERA && req.url.startsWith('/api/camera/')) return await proxy(req, res, CAMERA, true);
-      if (MOCK) return await mockApi(req, res);
-      return sendJson(res, 404, { error: 'No controller. Start with --mock or --controller <url>.' });
+      return await armApi(req, res);
     }
-    if (req.url === '/local/info') return sendJson(res, 200, { backend: CONTROLLER ? 'proxy' : MOCK ? 'mock' : 'none', allowMotion: !!(MOCK || ALLOW_MOTION), camera: CAMERA || (MOCK ? 'mock' : null) });
+    if (req.url.startsWith('/sim/')) return await simApi(req, res);
+    if (req.url === '/local/info') return sendJson(res, 200, { backend: 'arm-server', ...backend.info(), camera: CAMERA || 'mock' });
     // Repo photos, read only: the model comparison (tools/compare.mjs) overlays them on renders.
     const ph = req.url.match(/^\/photos\/([\w.-]+\.(?:jpe?g|png))$/i);
     if (ph) {
@@ -197,7 +244,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`three.js arm simulator: http://${HOST}:${PORT}/`);
-  if (MOCK) console.log('  /api -> mock controller (in this process)');
-  if (CONTROLLER) console.log(`  /api -> ${CONTROLLER} (${ALLOW_MOTION ? 'MOTION ALLOWED' : 'read only, stop allowed'})`);
-  else if (CAMERA) console.log(`  /api/camera/* -> ${CAMERA} (GET only)`);
+  console.log('  /api -> shared simulated arm (switch with POST /api/backend {"target": "sim" | "real"})');
+  if (CONTROLLER) console.log(`  real backend: ${CONTROLLER} (${ALLOW_MOTION ? 'MOTION ALLOWED after the sim check' : 'read only, stop allowed'})`);
+  if (CAMERA) console.log(`  /api/camera/* -> ${CAMERA} (GET only)`);
 });

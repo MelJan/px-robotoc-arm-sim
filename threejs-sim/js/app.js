@@ -2,17 +2,19 @@
 
 import * as THREE from 'three';
 import { createView } from './render.js';
-import { SERVOS, MAT, CAMERA, CUBE, COLOURS, PLAN } from './config.js';
+import { SERVOS, MAT, CAMERA, CUBE, COLOURS, PLAN, CONTROLLER } from './config.js';
 import { fk, anglesFromCounts, countsFromAngles, ikTopDown, guardViolations, camToBoard, toolYawAndTilt, Unreachable } from './kinematics.js';
 import { armShapes } from './collision.js';
 import { SimController, ControllerError } from './controller.js';
 import { World } from './world.js';
-import { cubeTilt } from './physics.js';
+import { cubeTilt, cubeYaw } from './physics.js';
 import { planTransfer, verify, toMoves, parseCommand, PlanError } from './planner.js';
 import { LiveLink } from './live.js';
+import { SimArm, runCalls, movesToCalls } from './armapi.js';
 import { makeMaterials, buildArm, buildTable, buildCamera, buildCube } from './model/index.js';
 import { initCameraTab, defaultCalibration, applyPinhole, tableToBoard } from './camview.js';
 import { initDemo } from './demo.js';
+import { initScenarios, TAUGHT } from './scenarios.js';
 
 const $ = id => document.getElementById(id);
 const fmt = (v, d = 1) => v.toFixed(d).replace('-0.0', '0.0');
@@ -38,14 +40,6 @@ function resetScene() {
   for (const [c, x, y, l, yaw] of DEFAULT_SCENE) world.addCube(c, c, x, y, l, yaw);
 }
 resetScene();
-
-// The team's hand-taught pick and place (docs/controller-live-2026-10-12.md).
-const TAUGHT = { name: 'step1-hacks-10-direct-approach', positions: [
-  ['HOME start', [320, 427, 403, 220, 250, 550]], ['Above orange, open', [440, 427, 360, 185, 340, 490]],
-  ['Single approach, open', [440, 347, 360, 185, 340, 490]], ['Close gripper', [440, 347, 360, 185, 340, 590]],
-  ['Lift cube', [440, 427, 360, 185, 340, 590]], ['Transfer', [230, 427, 360, 185, 340, 590]],
-  ['Lower to destination', [235, 347, 360, 185, 380, 590]], ['Release cube', [235, 347, 360, 185, 380, 490]],
-  ['Withdraw', [235, 407, 360, 185, 380, 490]], ['HOME finish', [320, 427, 403, 220, 250, 550]]].map(([name, counts]) => ({ name, counts })) };
 
 // ---------------- renderer ----------------
 
@@ -277,8 +271,8 @@ function updateJointPanel(counts) {
   });
 }
 
-/** True when the joint panel and pose buttons drive the real arm. */
-const liveControl = () => link && link.state && $('live-enable').checked;
+// The page's own simulated arm behind the controller's API (armapi.js): used only without server.mjs.
+const simArm = new SimArm(ctl);
 
 /** Sim check of one joint move before sending it anywhere: does the swept path hit something? */
 function moveIsClear(from, to) {
@@ -295,43 +289,35 @@ function moveIsClear(from, to) {
 
 async function command(kind, ch, value) {
   try {
-    if (liveControl()) {
-      const cur = LiveLink.counts(link.state);
-      const target = kind === 'jog' ? cur[ch] + value * ctl.settings.step_size : value;
-      const to = cur.slice(); to[ch] = target;
-      const hit = moveIsClear(cur, to);
-      if (hit) throw new Error(`sim predicts a collision: ${hit.a} × ${hit.b} — not sent`);
-      await link.move(ch, target);
-      log(`arm: ${SERVOS[ch].name} → ${target}`, 'warn');
-    } else if (kind === 'jog') ctl.jog(ch, value);
-    else ctl.move(ch, value);
+    const cur = serverMode() ? LiveLink.counts(link.state) : ctl.commands;
+    const target = kind === 'jog' ? cur[ch] + value * ctl.settings.step_size : value;
+    await send([{ op: 'move', ch, target, label: `move ${SERVOS[ch].name} → ${target}` }]);
   } catch (e) { toast(e.message); log(e.message, 'err'); }
 }
 
 const poseCmd = name => async () => {
-  try {
-    if (liveControl()) {
-      const cur = LiveLink.counts(link.state), to = link.state.joints.map(j => j[name.toLowerCase()]);
-      const hit = moveIsClear(cur, to);
-      if (hit) throw new Error(`sim predicts a collision on the way to ${name}: ${hit.a} × ${hit.b} — not sent`);
-      await link.goPose(name); log(`arm: go ${name}`, 'warn');
-    } else ctl.go_pose(name);
-  } catch (e) { toast(e.message); log(e.message, 'err'); }
+  try { await send([{ op: 'go_pose', name, label: `go ${name}` }]); }
+  catch (e) { toast(e.message); log(e.message, 'err'); }
 };
 $('go-home').onclick = poseCmd('HOME');
 $('go-park').onclick = poseCmd('PARK');
-$('power-on').onclick = () => { ctl.rearm(); lastContacts = new Set(world.contacts.map(k => `${k.a} × ${k.b}`)); };
+$('power-on').onclick = () => {
+  if (serverMode()) powerOn();
+  else { ctl.rearm(); lastContacts = new Set(world.contacts.map(k => `${k.a} × ${k.b}`)); }
+};
 $('estop').onclick = async () => {
   demo.stop();
+  simArm.abort = true;
+  if (link) link.abort = true;
   ctl.stop('emergency stop button');
-  if (link) { try { await link.emergencyStop(); log('arm: STOP sent', 'err'); } catch (e) { log(`arm stop failed: ${e.message}`, 'err'); } }
+  if (link) { try { await link.emergencyStop(); log('STOP sent to the active backend', 'err'); } catch (e) { log(`stop failed: ${e.message}`, 'err'); } }
 };
 
 // ---------------- task panel ----------------
 
 let current = null; // { plan, report, moves, start, mode }
 
-const startCounts = () => (liveControl() ? LiveLink.counts(link.state) : ctl.commands.slice());
+const startCounts = () => (serverMode() ? LiveLink.counts(link.state) : ctl.commands.slice());
 
 function describe(report) {
   const parts = [];
@@ -355,12 +341,12 @@ function renderPlan() {
     <div class="steps"><table><tr><th>Step</th>${SERVOS.map(s => `<th>${s.name}</th>`).join('')}</tr>${rows}</table></div>`;
   $('run-sim').disabled = false;
   $('export-plan').disabled = false;
-  $('send-live').disabled = !(liveControl() && report.ok && mode === 'moves');
-  $('send-live').title = mode !== 'moves' ? 'Choose "Single-joint moves": the HTTP API moves one joint at a time' : 'Needs a live connection with control enabled';
+  updateRealReason();
 }
 
 function makePlan() {
   try {
+    if (serverMode()) $('exec-mode').value = 'moves';   // the robot API moves one joint at a time
     const mode = $('exec-mode').value;
     const speed = Math.max(1, Math.min(100, Number($('demo-speed').value) || 20));
     const start = startCounts();
@@ -369,14 +355,15 @@ function makePlan() {
     let moves = null, notes = null;
     if (mode === 'moves') ({ moves, notes } = toMoves(world, plan, start));
     const report = verify(world, plan, start, { mode, speed, moves });
-    current = { plan, report, moves, notes, start, mode, speed };
+    current = { plan, report, moves, notes, start, mode, speed, sim: 'none' };   // sim: none | running | done | failed
     renderPlan();
     showPath(plan.steps, start);
     log(`plan "${$('cmd').value}": ${plan.steps.length} poses, ${report.ok ? 'OK' : 'FAILS'} in sim`, report.ok ? 'ok' : 'err');
   } catch (e) {
     current = null;
     $('plan-out').innerHTML = `<span class="bad">${e.message}</span>`;
-    $('run-sim').disabled = $('send-live').disabled = $('export-plan').disabled = true;
+    $('run-sim').disabled = $('export-plan').disabled = true;
+    updateRealReason();
     if (!(e instanceof PlanError)) console.error(e);
   }
 }
@@ -384,14 +371,27 @@ $('plan-btn').onclick = makePlan;
 $('cmd').addEventListener('keydown', e => { if (e.key === 'Enter') makePlan(); });
 $('exec-mode').onchange = () => { if (current) makePlan(); };
 
-$('run-sim').onclick = () => {
+$('run-sim').onclick = async () => {
   if (!current) return;
   try {
-    if (ctl.commands.some((c, i) => c !== current.start[i])) { makePlan(); if (!current) return; }
-    if (current.mode === 'moves') ctl.runMoves(current.moves, current.moves.map(m => m.label));
-    else ctl.runPoses(current.plan.steps.map(s => s.counts), current.speed, current.plan.steps.map(s => s.label));
-    world.events = [];
-  } catch (e) { toast(e.message); }
+    if (!serverMode()) {   // local simulation only
+      if (ctl.commands.some((c, i) => c !== current.start[i])) { makePlan(); if (!current) return; }
+      world.events = [];
+      if (current.mode === 'moves') ctl.runMoves(current.moves, current.moves.map(m => m.label));
+      else ctl.runPoses(current.plan.steps.map(s => s.counts), current.speed, current.plan.steps.map(s => s.label));
+      return;
+    }
+    if (LiveLink.counts(link.state).some((c, i) => c !== current.start[i])) { makePlan(); if (!current) return; }
+    if (!current.report.ok) { toast('The plan fails in the simulation; not sent'); return; }
+    const calls = movesToCalls(current.moves);
+    if (onReal()) {
+      let at = current.start.slice();
+      const rows = current.moves.map(m => { at = at.slice(); at[m.ch] = m.target; return [m.label, ...at]; });
+      if (!await confirmReal(`Run "${$('cmd').value}" on the real arm?`, `${calls.length} single-joint moves, computed and checked in the simulation.`, [['now', ...current.start], ...rows])) return;
+    }
+    await send(calls);
+    log(`plan "${$('cmd').value}" done on the ${onReal() ? 'real arm' : 'shared simulation'}`, 'ok');
+  } catch (e) { toast(e.message); log(e.message, 'err'); }
 };
 
 $('export-plan').onclick = async () => {
@@ -401,32 +401,21 @@ $('export-plan').onclick = async () => {
   try { await navigator.clipboard.writeText(json); toast('Plan copied as demo JSON'); } catch { console.log(json); toast('Clipboard blocked; JSON printed to the console'); }
 };
 
-$('send-live').onclick = async () => {
-  if (!current || !liveControl()) return;
-  // Re-plan from the arm's real commanded pose right before sending.
-  $('exec-mode').value = 'moves'; makePlan();
-  if (!current?.report.ok) { toast('The plan does not pass the simulation check; nothing sent'); return; }
-  if (!confirm(`Send ${current.moves.length} single-joint moves to the real arm at ${link.base || location.host}?\nStay at the emergency stop.`)) return;
-  $('live-follow').checked = true;
-  log(`arm: sending ${current.moves.length} moves`, 'warn');
-  try {
-    await link.runMoves(current.moves, { onStep: (i, m) => { $('hud').textContent = `arm: ${i + 1}/${current.moves.length} ${m.label}`; } });
-    log('arm: plan finished', 'ok');
-  } catch (e) { log(`arm: ${e.message}`, 'err'); toast(e.message); }
-};
-
 $('goto-xyz').onclick = () => {
   try {
     const s5 = anglesFromCounts(ctl.commands).s5;
     const a = ikTopDown(Number($('gx').value), Number($('gy').value), Number($('gz').value), { s5Near: s5 });
     const c = countsFromAngles(a, ctl.commands[5]);
     const bad = guardViolations(c); if (bad.length) throw new Error(bad.join(', '));
-    ctl.runPoses([c], Math.max(1, Number($('demo-speed').value) || 20), ['go to x y z']);
+    if (!serverMode()) { ctl.runPoses([c], Math.max(1, Number($('demo-speed').value) || 20), ['go to x y z']); return; }
+    const start = LiveLink.counts(link.state);
+    send(movesToCalls(toMoves(world, { steps: [{ label: 'go to x y z', counts: c }] }, start).moves)).catch(e => toast(e.message));
   } catch (e) { toast(e instanceof Unreachable ? `Unreachable: ${e.message}` : e.message); }
 };
 
 // the team's hand-taught demo (Tools)
 $('taught-demo').onclick = () => {
+  if (serverMode()) { $('scn-select').value = 'taught'; $('scn-select').dispatchEvent(new Event('change')); toast('Scenario "taught pick and place" selected: ↺ Reset, then ▶ Run'); return; }
   try { ctl.demo_load(TAUGHT.name, TAUGHT.positions); ctl.settings.demo_speed = Number($('demo-speed').value) || 40; ctl.demo_run(); showPath(TAUGHT.positions, ctl.commands.slice()); }
   catch (e) { toast(e.message); }
 };
@@ -434,7 +423,7 @@ $('taught-demo').onclick = () => {
 // ---------------- demonstration (demo.js) ----------------
 
 const demo = initDemo({
-  ctl, world, $, log, toast, renderCubes, showPath, moveIsClear, liveControl,
+  ctl, world, $, log, toast, renderCubes, showPath, moveIsClear, liveControl: () => liveControl(),
   setPathVisible: on => { pathLine.visible = pathDots.visible = on; needsRender = true; },
   resetView: () => { leaveOakView(); camera.position.set(-34, 44, 30); controls.target.set(0, 11, 6); controls.update(); },
 });
@@ -453,19 +442,26 @@ function renderCubes() {
       <button title="Click on the mat to drop it there" class="${placing === c.id ? 'on' : ''}">⌖</button><button title="Remove">×</button>`;
     const [pick, rm] = row.querySelectorAll('button');
     pick.onclick = () => { placing = placing === c.id ? null : c.id; renderCubes(); };
-    rm.onclick = () => { if (world.holding?.id === c.id) world.holding = null; world.cubes = world.cubes.filter(k => k !== c); world.dirty = true; renderCubes(); needsRender = true; };
+    rm.onclick = () => {
+      if (serverMode()) { setScene(sceneOf(c.id)).catch(e => toast(e.message)); return; }
+      if (world.holding?.id === c.id) world.holding = null; world.cubes = world.cubes.filter(k => k !== c); world.dirty = true; renderCubes(); needsRender = true;
+    };
     $('cubes').append(row);
   }
 }
 $('add-cube').onclick = () => {
   const colour = $('new-colour').value;
+  if (serverMode()) { setScene([...sceneOf(), [colour, Number($('nx').value), Number($('ny').value), 0, 0]]).catch(e => toast(e.message)); return; }
   let id = colour, n = 2;
   while (world.cube(id)) id = `${colour}${n++}`;
   world.addCube(id, colour, Number($('nx').value), Number($('ny').value), 0, 0);
   world.cube(id).p[2] = 30;
   renderCubes();
 };
-$('reset-scene').onclick = () => { resetScene(); renderCubes(); needsRender = true; };
+$('reset-scene').onclick = () => {
+  if (serverMode()) { setScene(DEFAULT_SCENE).catch(e => toast(e.message)); return; }
+  resetScene(); renderCubes(); needsRender = true;
+};
 
 const ray = new THREE.Raycaster();
 let downAt = null;
@@ -477,65 +473,172 @@ canvas.addEventListener('pointerup', e => {
   const hit = new THREE.Vector3();
   if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), hit)) return;
   const c = world.cube(placing);
-  if (c && c.state !== 'held') { c.p = [hit.x, hit.y, 12]; c.v = [0, 0, 0]; c.w = [0.4, 0.3, 0]; c.state = 'awake'; }
+  if (c && c.state !== 'held' && serverMode()) setScene([...sceneOf(c.id), [c.colour, hit.x, hit.y, 0, cubeYaw(c), c.id]]).catch(e => toast(e.message));
+  else if (c && c.state !== 'held') { c.p = [hit.x, hit.y, 12]; c.v = [0, 0, 0]; c.w = [0.4, 0.3, 0]; c.state = 'awake'; }
   placing = null; renderCubes();
 });
 
-// ---------------- live link ----------------
+// ---------------- arm server: one robot API, switchable backend ----------------
+//
+// The page is a client of server.mjs like any other program: every command is a call of the robot's
+// low-level API (/api/move, /api/go_pose, ...), answered by the backend that is active for everybody:
+// the shared simulated arm, or the real arm (each motion call simulated first on the server and
+// blocked if it collides). Header switch = POST /api/backend. The 3D view mirrors the server: arm
+// pose from GET /api/state, cubes and grasp events from GET /sim/world. Without server.mjs (page
+// served elsewhere) the page falls back to its own simulation.
 
 let link = null;
-$('live-connect').onclick = () => {
-  if (link) { link.stopPolling(); link = null; ghost.root.visible = false; $('live-connect').textContent = 'Connect'; $('live-status').textContent = 'not connected'; updateLiveUi(); return; }
-  link = new LiveLink($('live-url').value.trim());
+let backend = { backend: 'none' };
+let scenarios = null;   // scenarios.js, set up further down
+const mirror = { position: null, phase: null, backend: 'sim', seen: new Set(), off: false };
+const serverMode = () => backend.backend === 'arm-server' && !!link?.state;
+/** The view shows the server's arm and cubes (not while the local physics show runs). */
+const mirroring = () => serverMode() && !demo.running;
+const onReal = () => serverMode() && mirror.backend === 'real';
+/** Kept for demo.js / scenarios.js: true when commands go to the real arm. */
+const liveControl = onReal;
+
+function connect() {
+  if (link) return;
+  link = new LiveLink('');
   link.on((state, err) => {
-    $('live-status').textContent = err ? `error: ${err}` : `${state.mode}, ${state.outputs_off ? 'outputs off' : state.armed ? 'armed' : 'not armed'}${state.busy ? ', moving' : ''}`;
-    if (state && !err) {
-      const c = LiveLink.counts(state);
-      liveCounts = c;
-      if ($('live-follow').checked && !ctl.busy) ctl.setCommands(c);
-      if (state.joints) state.joints.forEach((j, i) => { ctl.poses.HOME[i] = j.home; ctl.poses.PARK[i] = j.park; });
-    }
+    if (err) { $('live-status').textContent = `error: ${err}`; updateLiveUi(); return; }
+    const c = LiveLink.counts(state);
+    mirror.position = state.position || c; mirror.phase = state.phase; mirror.backend = state.backend || 'real';
+    if (state.outputs_off && !mirror.off) { log(`${mirror.backend === 'real' ? 'real arm' : 'simulation'} stopped: ${state.error || 'outputs off'}`, 'err'); toast(`Stopped: ${state.error || 'outputs off'}. "Re-arm" powers it on (PARK → HOME).`); }
+    mirror.off = !!state.outputs_off;
+    if (state.joints) state.joints.forEach((j, i) => { ctl.poses.HOME[i] = j.home; ctl.poses.PARK[i] = j.park; });
+    if (mirroring()) { ctl.commands = c.slice(); ctl.outputsOff = !!state.outputs_off; ctl.armed = !state.outputs_off; ctl.error = state.error || null; }
+    $('live-status').textContent = `${mirror.backend === 'real' ? `real arm (${state.mode})` : 'shared simulation'}, ${state.outputs_off ? 'outputs off' : 'armed'}${state.busy ? ', moving' : ''}`;
     updateLiveUi(); needsRender = true;
   });
-  link.start(backend.backend === 'mock' ? 300 : 1500);   // the real controller is shared: poll gently
-  $('live-connect').textContent = 'Disconnect';
-};
-let liveCounts = null;
-function updateLiveUi() {
-  const on = !!(link && link.state);
-  $('live-demo').disabled = !on;
-  for (const id of ['live-home', 'live-park']) $(id).disabled = !liveControl();
-  $('mode-badge').textContent = liveControl() ? 'live control' : on ? 'sim + live view' : 'simulation';
-  $('mode-badge').classList.toggle('live', !!liveControl());
-  if (current) $('send-live').disabled = !(liveControl() && current.report.ok && current.mode === 'moves');
+  link.start(100);   // same machine: cheap; the server reads the real controller only when the real backend is active
 }
-$('live-enable').onchange = updateLiveUi;
-$('show-ghost').onchange = () => { updateLiveUi(); needsRender = true; };
-$('live-home').onclick = poseCmd('HOME');
-$('live-park').onclick = poseCmd('PARK');
-$('live-demo').onclick = () => {
-  const d = link.state.demo;
-  try {
-    ctl.demo_load(d.name, d.positions.map(p => ({ name: p.name, counts: LiveLink.counts(p) })));
-    ctl.settings.demo_speed = link.state.settings?.demo_speed || 20; ctl.demo_run();
-    log(`playing the controller's demo "${d.name}" in the sim`);
-  } catch (e) { toast(e.message); }
-};
-// Who serves this page: server.mjs with the mock (connect automatically), server.mjs as a proxy to the
-// real controller (read only unless started with --allow-motion; connect only when asked), or the
-// controller itself (/local/info missing: read state only after Connect).
-let backend = { backend: 'none', allowMotion: false };
-fetch('/local/info', { cache: 'no-store' }).then(r => (r.ok ? r.json() : { backend: 'controller', allowMotion: true })).catch(() => backend).then(info => {
-  backend = info;
-  // The consent box starts locked in the HTML and opens only when the server allows motion.
-  if (info.allowMotion) $('live-enable').disabled = false;
-  else {
-    $('live-enable').checked = false; $('live-enable').disabled = true;
-    $('live-enable').parentElement.title = 'Read only: the page server forwards GET requests only';
-    $('live-status').textContent = 'read only';
+
+/** Cubes, gripper and events of the server's simulation into the local world (no local physics). */
+function applyWorld(ws) {
+  const ids = new Set(ws.cubes.map(c => c.id));
+  world.cubes = world.cubes.filter(c => ids.has(c.id));
+  for (const s of ws.cubes) {
+    const c = world.cube(s.id) || world.addCube(s.id, s.colour, s.p[0], s.p[1], 0, 0);
+    c.p = s.p; c.R = s.R; c.state = s.state; c.v = [0, 0, 0]; c.w = [0, 0, 0];
   }
-  if (info.backend === 'mock') $('live-connect').click();
-});
+  world.holding = ws.holding ? { id: ws.holding, width: ws.gap } : null;
+  world.gap = ws.gap;
+  for (const e of ws.events || []) {
+    const key = `${e.t}|${e.text}`;
+    if (mirror.seen.has(key)) continue;
+    mirror.seen.add(key); if (mirror.seen.size > 200) mirror.seen.delete(mirror.seen.values().next().value);
+    log(e.text, e.kind === 'warn' ? 'warn' : e.kind === 'grasp' ? 'ok' : '');
+  }
+  needsRender = true;
+}
+(async function pollWorld() {
+  if (mirroring()) {
+    try { const r = await fetch('/sim/world', { cache: 'no-store' }); if (r.ok) applyWorld(await r.json()); } catch { /* next time */ }
+  }
+  setTimeout(pollWorld, 100);
+})();
+
+/** Replace the cubes of the shared simulation: [[colour, x, y, level, yaw, id], ...]. */
+async function setScene(cubes) {
+  if (!serverMode()) {
+    world.cubes = []; world.holding = null;
+    for (const [c, x, y, l = 0, yaw = 0, id] of cubes) world.addCube(id || c, c, x, y, l, yaw);
+    world.dirty = true; renderCubes(); needsRender = true; return;
+  }
+  const r = await fetch('/sim/scene', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cubes }) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error);
+  applyWorld(j); renderCubes();
+}
+/** The current cubes as a scene list (held cubes stay out). */
+const sceneOf = (except = null) => world.cubes.filter(c => c.state !== 'held' && c.id !== except)
+  .map(c => [c.colour, c.p[0], c.p[1], Math.max(0, world.levelOf(c)), cubeYaw(c), c.id]);
+
+/** Run API calls on the active backend; a blocked call (409) stops the rest. */
+async function send(calls) {
+  const hud = (i, c) => { $('hud').textContent = `${calls.length > 1 ? `${i + 1}/${calls.length} ` : ''}${c.label}`; };
+  if (!serverMode()) return runCalls(simArm, calls, { onStep: hud });
+  if (onReal()) log(`real arm: ${calls.length === 1 ? calls[0].label : `${calls.length} calls`}`, 'warn');
+  return runCalls(link, calls, { onStep: hud });
+}
+
+async function setTarget(target) {
+  try {
+    const r = await fetch('/api/backend', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error);
+    Object.assign(backend, j);
+    await link?.read();
+    log(`backend: ${target === 'real' ? `REAL ARM ${j.real}` : 'shared simulation'}`, target === 'real' ? 'warn' : '');
+  } catch (e) { toast(e.message); log(e.message, 'err'); }
+  updateLiveUi();
+}
+
+function updateLiveUi() {
+  const real = onReal(), off = !!link?.state?.outputs_off;
+  $('target-sim').classList.toggle('on', !real);
+  $('target-real').classList.toggle('on', real);
+  $('target-real').disabled = !backend.realAvailable;
+  $('target-real').title = backend.realAvailable ? `Switch the API to the real arm (${backend.real})` : 'No real arm: start server.mjs with --controller <url>';
+  const pill = $('link-pill');
+  pill.className = 'pill ' + (real ? 'live' : serverMode() ? 'view' : '');
+  pill.textContent = !serverMode() ? (link?.error ? 'server: connection error' : 'local simulation only')
+    : real ? `REAL ARM · ${backend.real}${backend.allowMotion ? '' : ' · read only'}` : 'shared simulation';
+  $('live-banner').hidden = !real;
+  $('live-banner').className = 'live-banner live';
+  $('live-banner-text').textContent = `REAL ARM (${backend.real}): every motion call is simulated first and blocked if it collides.${backend.allowMotion ? '' : ' Read only: start the server with --allow-motion to move it.'}${off ? ' Its outputs are off.' : ''}`;
+  $('live-power').hidden = !(real && off);
+  document.body.classList.toggle('armed', real);
+  $('joints-target').textContent = real ? '→ REAL ARM' : serverMode() ? '→ shared simulation' : '→ simulation';
+  $('joints-target').classList.toggle('live', real);
+  $('run-sim').textContent = real ? '▶ Run on REAL arm' : '▶ Run';
+  $('run-sim').classList.toggle('danger', real);
+  $('dlg-backend').innerHTML = !serverMode() ? 'The page is not connected to <code>server.mjs</code>; it runs its own simulation.'
+    : `One robot API for everybody at <code>${location.origin}/api</code> (the controller's low-level API). Active backend: <b>${real ? `real arm ${backend.real}` : 'shared simulation'}</b>.`
+      + (backend.realAvailable ? ` Real arm: ${backend.real}${backend.allowMotion ? ', motion allowed after the simulation check.' : ', read only (<code>--allow-motion</code> not given).'}` : ' No real arm configured (<code>--controller &lt;url&gt;</code>).');
+  updateRealReason();
+  scenarios?.render();
+}
+
+/** The line under the task buttons. */
+function updateRealReason() {
+  $('real-reason').textContent = onReal() ? 'Runs on the real arm: the planner computed it in the simulation, and the server simulates every call again before sending it.' : '';
+}
+
+/** Short confirmation before a multi-step run goes to the real arm. rows: [[label, ...counts]]. */
+function confirmReal(title, html, rows = []) {
+  const dlg = $('send-dlg');
+  $('send-title').textContent = title;
+  const table = rows.length ? `<div class="moves"><table><tr><th>Step</th>${SERVOS.map(s => `<th>${s.name}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</table></div>` : '';
+  $('send-body').innerHTML = `<p>${html}</p>${table}`;
+  dlg.returnValue = '';
+  dlg.showModal();
+  return new Promise(resolve => dlg.addEventListener('close', () => resolve(dlg.returnValue === 'go' && onReal()), { once: true }));
+}
+
+const powerOn = async () => { try { await send([{ op: 'power_on', label: 'power on (PARK → HOME)' }]); } catch (e) { toast(e.message); log(e.message, 'err'); } };
+$('target-sim').onclick = () => setTarget('sim');
+$('target-real').onclick = () => setTarget('real');
+$('live-off').onclick = () => setTarget('sim');
+$('live-power').onclick = powerOn;
+$('link-pill').onclick = () => { updateLiveUi(); $('real-dlg').showModal(); };
+$('open-real').onclick = () => { updateLiveUi(); $('real-dlg').showModal(); };
+$('show-ghost').onchange = () => { needsRender = true; };
+
+(async () => {
+  // a page served by the controller itself has no /local/info (404); a network error is retried
+  for (let i = 0; i < 8; i++) {
+    try {
+      const r = await fetch('/local/info', { cache: 'no-store' });
+      backend = r.ok ? await r.json() : { backend: 'controller' };
+      break;
+    } catch (e) { console.warn('/local/info:', e.message); await new Promise(res => setTimeout(res, 500 * (i + 1))); }
+  }
+  if (backend.backend === 'arm-server') connect();
+  updateLiveUi();
+})();
 
 // ---------------- calibration panel ----------------
 
@@ -561,6 +664,22 @@ document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
   $('tab-camera').hidden = b.dataset.tab !== 'camera';
   if (b.dataset.tab === 'camera') { camTab.activate(); camTab.update(); }
 });
+/** Replace the sim cubes with the camera's detections. */
+function placeDetections(list) {
+  if (serverMode()) {
+    setScene(list.map(d => { const [x, y] = tableToBoard([d.X, d.Y, 0]); return [d.colour, x, y, 0, d.yaw]; }))
+      .then(() => log(`${list.length} cubes from the camera put into the shared simulation`, 'ok')).catch(e => toast(e.message));
+    return;
+  }
+  world.cubes = []; world.holding = null;
+  for (const d of list) {
+    const [x, y] = tableToBoard([d.X, d.Y, 0]);
+    let id = d.colour, n = 2; while (world.cube(id)) id = `${d.colour}${n++}`;
+    world.addCube(id, d.colour, x, y, 0, d.yaw);
+  }
+  world.dirty = true; renderCubes(); needsRender = true;
+  log(`${list.length} cubes from the camera put on the mat`, 'ok');
+}
 const camTab = initCameraTab({
   scene, initial: CAMERA.calib, hideForCamera, log, toast,
   linkBase: () => (link ? link.base : ''),
@@ -569,17 +688,7 @@ const camTab = initCameraTab({
     try { localStorage.setItem(CAM_KEY, JSON.stringify({ R: cal.R, t: cal.t, f: cal.f, cx: cal.cx, cy: cal.cy, centre: cal.centre, rms: cal.rms, H: cal.H })); } catch { /* not saved */ }
     placeMatAndCamera(); if (oakView) applyOakView(); needsRender = true;
   },
-  useDetections: list => {
-    world.cubes = []; world.holding = null;
-    for (const d of list) {
-      const [x, y] = tableToBoard([d.X, d.Y, 0]);
-      let id = d.colour, n = 2; while (world.cube(id)) id = `${d.colour}${n++}`;
-      world.addCube(id, d.colour, x, y, 0, d.yaw);
-    }
-    renderCubes(); needsRender = true;
-    log(`${list.length} cubes from the camera put on the mat`, 'ok');
-    toast(`${list.length} cubes placed. Try a task like "${list[0]?.colour || 'orange'} to 0 14".`);
-  },
+  useDetections: list => placeDetections(list),
   // Live tracking: move the nearest sim cube of the same colour to each detection (within 6 cm,
   // and only if it moved more than 3 mm, so camera noise does not keep the physics awake);
   // add cubes the sim does not have yet. Cubes in the gripper are left alone.
@@ -599,9 +708,20 @@ const camTab = initCameraTab({
         world.addCube(id, d.colour, x, y, 0, d.yaw); changed = true;
       }
     }
-    if (changed) { renderCubes(); needsRender = true; }
+    if (changed) { renderCubes(); needsRender = true; if (serverMode()) setScene(sceneOf()).catch(() => {}); }
   },
 });
+
+// ---------------- scenarios (scenarios.js) ----------------
+
+scenarios = initScenarios({
+  ctl, world, $, log, toast, renderCubes, showPath, confirmReal, demo, send, setScene, serverMode, onReal,
+  counts: () => (serverMode() ? LiveLink.counts(link.state) : ctl.commands.slice()),
+  idle: () => (serverMode() ? !link.state.busy && world.settled() : !ctl.busy && world.settled()),
+  detections: () => camTab.detections, useDetections: placeDetections,
+  stopCalls: () => { if (link) link.abort = true; simArm.abort = true; ctl.stop('scenario stopped'); },
+});
+$('demo-reset').onclick = () => scenarios.reset();
 
 // ---------------- main loop ----------------
 
@@ -616,8 +736,15 @@ renderCubes();
 function frame(now) {
   const real = Math.min(0.05, (now - last) / 1000); last = now;
   const dt = real * Number($('time-scale').value);
-  const moving = ctl.busy || !world.settled() || !!world.holding;
-  if (moving || world.dirty) {
+  if (mirroring()) {
+    // smooth the 10 Hz pose of the server's arm; cubes come from /sim/world (applyWorld)
+    const tgt = mirror.position;
+    if (tgt) {
+      let moved = false;
+      ctl.position = ctl.position.map((p, i) => { const q = p + (tgt[i] - p) * Math.min(1, real * 14); if (Math.abs(q - p) > 1e-3) moved = true; return q; });
+      if (moved || needsRender) { world.frames = fk(anglesFromCounts(ctl.position)); needsRender = true; }
+    }
+  } else if (ctl.busy || !world.settled() || !!world.holding || world.dirty) {
     const n = Math.min(40, Math.max(1, Math.ceil(dt / (1 / 120))));
     for (let i = 0; i < n; i++) {
       ctl.update(dt / n);
@@ -641,9 +768,7 @@ function frame(now) {
     const a = anglesFromCounts(ctl.position);
     arm.setPose(a, world.gap);
     // The ghost shows the real arm only where it differs from the simulated one.
-    const showGhost = !!(link && link.state && liveCounts && $('show-ghost').checked && liveCounts.some((c, i) => Math.abs(c - ctl.position[i]) > 2));
-    ghost.root.visible = showGhost;
-    if (showGhost) ghost.setPose(anglesFromCounts(liveCounts), world.gap);
+    ghost.root.visible = false;   // the view shows the active backend's arm itself
     syncCubeMeshes();
     const hitNames = new Set(world.contacts.flatMap(k => [k.a, k.b]));
     updateShapes(armShapes(world.frames, world.gap), hitNames, $('show-shapes').checked);
@@ -652,9 +777,9 @@ function frame(now) {
     updateJointPanel(ctl.position);
     const f = world.frames, t = toolYawAndTilt(f.hand);
     $('pose-readout').textContent = `Cube-centre point x ${fmt(f.grasp[0])} · y ${fmt(f.grasp[1])} · z ${fmt(f.grasp[2])} cm · tool ${fmt(t.tilt, 0)}° off vertical`;
-    $('hud').textContent = ctl.outputsOff ? `stopped: ${ctl.error}` : ctl.motion ? ctl.motion.label : 'idle';
+    $('hud').textContent = ctl.outputsOff ? `stopped: ${ctl.error}` : (mirroring() ? mirror.phase : ctl.motion?.label) || 'idle';
     if (current) {
-      const lbl = ctl.motion?.label;
+      const lbl = mirroring() ? mirror.phase : ctl.motion?.label;
       $('plan-out').querySelectorAll('tr[data-i]').forEach(tr => tr.classList.toggle('cur', !!lbl && current.plan.steps[tr.dataset.i]?.label === lbl.split(':')[0]));
     }
     // The backdrop wall hides itself when the camera swings behind it.
