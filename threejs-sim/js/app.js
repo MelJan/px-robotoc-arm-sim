@@ -760,6 +760,12 @@ scenarios = initScenarios({
   stopCalls: () => { if (link) link.abort = true; simArm.abort = true; ctl.stop('scenario stopped'); },
 });
 $('demo-reset').onclick = () => scenarios.reset();
+$('sync-cams').onclick = async () => {
+  $('sync-cams').disabled = true;
+  try { const msg = await camTab.syncCubes(); toast(msg); log(`sync from the cameras: ${msg}`, 'ok'); }
+  catch (e) { toast(e.message); log(e.message, 'err'); }
+  $('sync-cams').disabled = false;
+};
 
 // ---------------- main loop ----------------
 

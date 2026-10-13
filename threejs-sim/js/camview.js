@@ -656,8 +656,29 @@ export function initCameraTab(ctx) {
   syncBars();
   $('cams-full').onclick = () => fullscreen($('cam-stages'));
   document.addEventListener('fullscreenchange', () => update());
+  /**
+   * The cubes the cameras see now, into the simulation: a fresh snapshot of every live camera (one GET each),
+   * then cubes located in 3D from both cameras (or on the mat from one) and placed at their stack levels.
+   */
+  async function syncCubes() {
+    await activate();
+    const live = Object.values(states).filter(st => st.source === 'live');
+    await Promise.all(live.map(st => new Promise(res => {
+      const done = () => { st.img.removeEventListener('load', done); st.img.removeEventListener('error', done); res(); };
+      st.img.addEventListener('load', done); st.img.addEventListener('error', done);
+      refreshLive(st); setTimeout(done, 5000);
+    })));
+    await new Promise(r => setTimeout(r, 300));
+    findCubes();
+    showDetections(0);
+    const resting3d = cubes3d.filter(resting);
+    if (resting3d.length) { ctx.useCubes3d(resting3d); return `${resting3d.length} cubes from ${Math.max(...cubes3d.map(c => c.cameras))} cameras`; }
+    const flat = S.detections.filter(d => d.ok);
+    if (flat.length) { ctx.useDetections(flat); return `${flat.length} cubes from ${S.cam.name} (assumed on the mat)`; }
+    throw new Error(live.length ? 'No cubes found in the camera frames' : 'No live camera: start the server with --camera http://10.102.4.103:8765 (or load frames in the Camera tab)');
+  }
   return {
-    showInMain, update, render, markDirty: () => { dirty = true; }, get calibration() { return S.cal; }, get detections() { return S.detections; },
+    syncCubes, showInMain, update, render, markDirty: () => { dirty = true; }, get calibration() { return S.cal; }, get detections() { return S.detections; },
     calibrationOf: id => states[id].cal, addTracker, grabFrame, stopVideo, activate, trackArm, select,
     /** Show an image (URL) as a camera's frame, like "Image file…" (for tests and tools). */
     loadFrame: (id, url) => { const st = states[id]; st.source = 'file'; st.img.src = url; if (st === S) $('cam-source').value = 'file'; },

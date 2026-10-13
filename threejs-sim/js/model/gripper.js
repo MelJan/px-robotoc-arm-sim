@@ -8,11 +8,13 @@ import { screwAt, servo, horn } from './parts.js';
 
 const RAD = Math.PI / 180;
 
-/** Claw finger outline in finger-local coordinates (u outward, v down from the gear-link end). */
+/** Finger outline in finger-local coordinates (u outward, v down from the gear-link end): a straight bar. */
 export function fingerShape() {
   const tu = GRIPPER.tip[0], tv = GRIPPER.tip[1];
-  const pts = [[-0.35, -0.38], [0.45, -0.42], [1.8, 0.3], [1.9, 0.95], [1.7, 2.6], [0.95, 4.6], [tu + 0.95, tv + 0.72],
-               [tu + 0.3, tv + 0.72], [tu + 0.28, tv - 0.62], [tu + 0.42, tv - 1.4], [-0.25, 3.6], [-0.55, 1.6], [-0.52, 0.3]];
+  // a straight bar (photos/arm-tags-106-107-109-*.jpg): a lug at the top around both pivots, then straight
+  // down and slightly inward to the pad block; the pad position itself is the measured GRIPPER.tip
+  const pts = [[-0.45, -0.35], [0.3, -0.8], [1.65, -0.95], [1.85, -0.4], [0.75, 0.75], [tu + 1.0, tv - 0.9], [tu + 0.95, tv + 0.72],
+               [tu + 0.3, tv + 0.72], [tu + 0.28, tv - 0.62], [-0.5, 0.45]];
   const s = new THREE.Shape();
   s.moveTo(pts[0][0], -pts[0][1]);
   for (const [u, v] of pts.slice(1)) s.lineTo(u, -v);
@@ -84,7 +86,7 @@ export function buildGripper(M) {
       orient(fm, V(sx, 0, 0), V(0, 0, -1), V(0, sx, 0)); at(fm, 0, y, 0); finger.add(fm);
     }
     // spacers between the two finger plates, and the screws at the joints
-    for (const [u, v] of [[0.95, 2.8], [GRIPPER.tip[0] + 0.7, GRIPPER.tip[1] - 0.9]]) {
+    for (const [u, v] of [[-0.3, 2.8], [GRIPPER.tip[0] + 0.7, GRIPPER.tip[1] - 0.9]]) {   // on the bar's centre line
       const sp = cyl(0.16, 0.65, M.screw, 'y', 6); at(sp, sx * u, 0, v); finger.add(sp);
       for (const y of [-0.55, 0.55]) screwAt(finger, M, V(sx * u, y, v), V(0, Math.sign(y), 0), 0.13);
     }

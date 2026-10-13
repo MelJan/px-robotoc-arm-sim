@@ -10,6 +10,9 @@ Branch `feature/threejs-sim`. Newest first. Dates are when the change was commit
 - **Tag layout calibrated:** from two live snapshot pairs and the close-up photos, the S5 axis is 10,6° / 0,5 cm from the model's. The wrist + gripper pair fit improved from 17–50 px to 3–9 px.
 - **Camera views** (in the tab, the Cameras view and full screen) have a toolbar: simulation, mat, markers, tags, parts, ghost, frame opacity, track, full screen.
 - Tag axes are made orthonormal everywhere. A tag's quarter turn is reported only on clear evidence.
+- **📷 Cubes from cameras** (task card): one snapshot per live camera, cubes located (in 3D with both cameras) and put into the simulation at their stack levels.
+- **Demo finale:** only a few cubes are dropped (green on top, red clipping the edge, one thrown), at 1× speed; the speed returns to the previous value afterwards.
+- **Gripper model:** straight finger bars, as in the photos; the pad positions are unchanged (measured).
 - **Open:** the distance from the S5 hub to tag 107 (the joint motion cannot show it). See [`docs/two-camera-tracking.md`](docs/two-camera-tracking.md).
 
 ## 2026-10-13 (late afternoon): Rigid-part tracking with tags 106–109, both cameras side by side
