@@ -13,6 +13,7 @@ import { detectMarkers } from './aruco.js';
 import { calFromLookAt, detectArmTags, triangulate, fitArmPose, tagPoints, projectBoard, boardToTable } from './armtrack.js';
 import { locateCubes } from './locate3d.js';
 import { fitPartPose, learnTagLayout } from './rigidtrack.js';
+import { fitJointPair, estimateJointAxis } from './jointfit.js';
 import { armShapes, LINK } from './collision.js';
 import { fk } from './kinematics.js';
 import { CUBE } from './config.js';
@@ -89,9 +90,20 @@ export function initCameraTab(ctx) {
     const [sim, overlay] = stage.querySelectorAll('canvas'), img = stage.querySelector('img');
     overlay.width = 1280; overlay.height = 720;
     const cap = document.createElement('div'); cap.className = 'cam-cap'; cap.textContent = c.name; stage.append(cap);
-    const fsb = document.createElement('button'); fsb.className = 'cam-fs'; fsb.title = 'Full screen (Esc to leave)'; fsb.textContent = '⛶';
+    // options inside the view, so they work in full screen too: they flip the Camera tab's checkboxes
+    const bar = document.createElement('div'); bar.className = 'cam-bar';
+    const opt = (label, id, title) => { const b = document.createElement('button'); b.textContent = label; b.title = title; b.dataset.for = id; b.onclick = e => { e.stopPropagation(); const c = $(id); c.checked = !c.checked; c.dispatchEvent(new Event('change')); syncBars(); }; return b; };
+    bar.append(
+      opt('Sim', 'cam-show-sim', 'Simulated view under the frame'), opt('Mat', 'cam-show-grid', 'Mat grid and axes'), opt('Marks', 'cam-show-marks', 'Markers and model tags'),
+      opt('Tags', 'cam-show-parts', 'Tags coloured by part'), opt('Parts', 'cam-show-bodies', 'Estimated parts as wireframes'), opt('Ghost', 'cam-arm-ghost', 'Tracked pose as a ghost in 3D'));
+    const op = document.createElement('input'); op.type = 'range'; op.min = 0; op.max = 100; op.value = 50; op.title = 'Real frame opacity'; op.className = 'cam-op';
+    op.oninput = e => { e.stopPropagation(); $('cam-opacity').value = op.value; $('cam-opacity').dispatchEvent(new Event('input')); };
+    op.onclick = e => e.stopPropagation();
+    const tr = document.createElement('button'); tr.textContent = 'Track'; tr.title = 'Track the arm in this frame'; tr.onclick = e => { e.stopPropagation(); trackArm(); };
+    const fsb = document.createElement('button'); fsb.textContent = '⛶'; fsb.title = 'Full screen (Esc to leave)';
     fsb.onclick = e => { e.stopPropagation(); fullscreen(stage); };
-    stage.append(fsb);
+    bar.append(op, tr, fsb);
+    stage.append(bar);
     states[c.id] = { cam: c, stage, img, sim, simG: sim.getContext('2d'), overlay, g: overlay.getContext('2d'), cal: ctx.cals[c.id],
       points: c.id === 'oak' ? savedPairs() : [], source: c.id === 'oak' ? 'saved' : 'live', markerQuads: {}, detections: [], tags: {}, videoTimer: null, frames: 0 };
   });
@@ -361,7 +373,7 @@ export function initCameraTab(ctx) {
   };
 
   // ---- arm tracking: the AprilTags on the arm in every camera with a frame, combined (armtrack.js)
-  let lastArm = null, parts = {}, lastViews = [];   // last joint fit, rigid part fits and the views they came from
+  let lastArm = null, parts = {}, lastViews = [], pair = null;   // last joint fit, rigid part fits and the views they came from
   function trackArm({ quiet = false } = {}) {
     const views = [];
     for (const st of Object.values(states)) {
@@ -391,6 +403,8 @@ export function initCameraTab(ctx) {
       try { const pf = fitPartPose(link, views, { init: f0[link] }); if (pf) parts[link] = pf; } catch (e) { lines.push(`${link}: ${e.message}`); }
     }
     const shifts = Object.assign({}, ...Object.values(parts).map(p => p.shifts));
+    // wrist + gripper together: wrist pose and S5 (7 numbers) from the tags of both parts
+    try { pair = fitJointPair('s5', views, { init: { parent: f0.wrist, child: f0.hand } }); } catch { pair = null; }
     try {
       if (views.length >= 2 || views.reduce((n, x) => n + Object.keys(x.tags).length, 0) >= 2) {
         result = fitArmPose(views, { init: ctx.armAngles(), useCorners: $('cam-arm-corners').checked, shifts });
@@ -409,7 +423,8 @@ export function initCameraTab(ctx) {
     });
     ctx.onArmTrack(result);
     const a0 = ctx.armAngles();
-    $('cam-arm-out').innerHTML = legend() + lines.map(l => `<div>${l}</div>`).join('') + partLines.join('') +
+    const pairLine = pair ? `<div><b>Wrist + gripper together</b> (6 + 1 numbers, ${pair.views} tag views from ${pair.cameras} camera${pair.cameras > 1 ? 's' : ''}): S5 = ${pair.angle.toFixed(1)}° about the model axis, ${pair.rms.toFixed(1)} px${pair.rms > 3 * Math.max(parts.wrist?.rms || 0, parts.hand?.rms || 0, 1) ? ' — much worse than the parts alone: the tag anchors or the S5 axis are off; record poses and fit the axis' : ''}</div>` : '';
+    $('cam-arm-out').innerHTML = legend() + lines.map(l => `<div>${l}</div>`).join('') + partLines.join('') + pairLine + recLine() +
       Object.entries(tri).map(([id, t]) => `<div>tag ${id} from ${views.filter(x => x.tags[id]).length} cameras: x ${t.board[0].toFixed(1)} · y ${t.board[1].toFixed(1)} · z ${t.board[2].toFixed(1)} cm (${t.rms.toFixed(1)} px)</div>`).join('') +
       (result ? `<table class="params"><tr><th></th>${['S1', 'S2', 'S3', 'S4', 'S5'].map(s => `<th>${s}</th>`).join('')}</tr>
         <tr><th>tracked</th>${['s1', 's2', 's3', 's4', 's5'].map(j => `<td>${result.free.includes(j) ? `${result.angles[j].toFixed(1)}°` : '–'}</td>`).join('')}</tr>
@@ -421,6 +436,30 @@ export function initCameraTab(ctx) {
     return result;
   }
   $('cam-arm').onclick = () => trackArm();
+  // ---- joint axis calibration: record poses (both parts seen), then fit the S5 axis (jointfit.js)
+  const records = [];
+  const recLine = () => `<div>${records.length} pose${records.length === 1 ? '' : 's'} recorded for the S5 axis${records.length ? ` (S5 commanded: ${records.map(r => r.commanded.toFixed(0)).join(', ')}°)` : ''}.</div>`;
+  $('cam-arm-record').onclick = () => {
+    trackArm({ quiet: true });
+    if (!parts.wrist || !parts.hand) { ctx.toast('Both the wrist and the gripper need a tag in view to record'); return; }
+    records.push({ parent: parts.wrist, child: parts.hand, commanded: ctx.armAngles().s5 });
+    ctx.log(`pose ${records.length} recorded for the S5 axis (S5 commanded ${ctx.armAngles().s5.toFixed(1)}°)`, 'ok');
+    trackArm({ quiet: true });
+  };
+  $('cam-arm-clear').onclick = () => { records.length = 0; trackArm({ quiet: true }); };
+  $('cam-arm-axis').onclick = () => {
+    try {
+      const r = estimateJointAxis('s5', records);
+      for (const t of r.layout) Object.assign(ARM_TAGS.find(x => x.key === t.key), { centre: t.centre, normal: t.normal, up: t.up });
+      const text = JSON.stringify(r.layout.map(({ key, id, link, centre, normal, up }) => ({ key, id, link, centre, normal, up })), null, 1);
+      try { navigator.clipboard.writeText(text); } catch { /* shown below */ }
+      $('cam-arm-out').insertAdjacentHTML('beforeend', `<div><b>S5 axis from ${records.length} poses</b> (spread ${r.spread}°): ${r.model.axisDeg}° and ${r.model.offset} cm from the model axis, circle fit ${r.fit} cm.
+        ${r.servo ? `Measured S5 = ${r.servo.slope} × commanded + ${r.servo.offset}° (slope near 1: direction right; the offset is the error of S5's angle at HOME).` : ''}
+        Corrected tag layout used now and copied for config.js ARM_TAGS:</div><pre class="api">${text}</pre>`);
+      ctx.log(`S5 axis fitted from ${records.length} poses: ${r.model.offset} cm, ${r.model.axisDeg}° from the model; tag layout corrected`, 'ok');
+      update();
+    } catch (e) { ctx.toast(e.message); }
+  };
   // Measures where each seen tag sits on its part, relative to the part's fitted pose, and uses that from
   // now on (this browser session). Copy the numbers into config.js ARM_TAGS to keep them.
   $('cam-arm-learn').onclick = () => {
@@ -612,6 +651,9 @@ export function initCameraTab(ctx) {
     update();
   }
   $('view-cams').onclick = () => showInMain($('cam-main').hidden);
+  function syncBars() { for (const b of document.querySelectorAll('.cam-bar button[data-for]')) b.classList.toggle('on', $(b.dataset.for).checked); for (const r of document.querySelectorAll('.cam-op')) r.value = $('cam-opacity').value; }
+  for (const id of ['cam-show-sim', 'cam-show-grid', 'cam-show-marks', 'cam-show-parts', 'cam-show-bodies', 'cam-arm-ghost', 'cam-opacity']) $(id).addEventListener(id === 'cam-opacity' ? 'input' : 'change', syncBars);
+  syncBars();
   $('cams-full').onclick = () => fullscreen($('cam-stages'));
   document.addEventListener('fullscreenchange', () => update());
   return {

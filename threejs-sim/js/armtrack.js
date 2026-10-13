@@ -42,10 +42,17 @@ export function calFromLookAt(posMm, lookAtMm, f, w = 1280, h = 720) {
   return { R, t, f, cx: w / 2, cy: h / 2, centre: posMm.slice(), rms: NaN };
 }
 
+/** A tag's normal, up and right as an orthonormal set (up made square to the normal; right = up x normal). */
+export function tagAxes(tag) {
+  const n = norm(tag.normal), d = tag.up[0] * n[0] + tag.up[1] * n[1] + tag.up[2] * n[2];
+  const up = norm(tag.up.map((v, i) => v - d * n[i]));
+  return { n, up, right: cross(up, n) };
+}
+
 /** Board-frame centre and corners (TL, TR, BR, BL as printed) of an arm tag for model angles a. */
 export function tagPoints(tag, a, frames = fk(a)) {
   const f = frames[tag.link];
-  const n = tag.normal, up = tag.up, right = cross(up, n);   // seen from the front: right = up x normal
+  const { n, up, right } = tagAxes(tag);
   const h = tag.size / 2, P = (u, v) => point(f, tag.centre.map((c, i) => c + u * right[i] + v * up[i]));
   return { centre: point(f, tag.centre), corners: [P(-h, h), P(h, h), P(h, -h), P(-h, -h)] };
 }

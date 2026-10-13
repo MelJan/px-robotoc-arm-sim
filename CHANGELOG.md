@@ -2,6 +2,16 @@
 
 Branch `feature/threejs-sim`. Newest first. Dates are when the change was committed.
 
+## 2026-10-13 (evening): Joints combine tags across parts; S5 axis calibrated; full-screen options
+
+- **Joint fit** (`js/jointfit.js`):
+  - Per frame, the wrist pose and S5 (7 numbers) come from the tags of both parts.
+  - Across 3 or more recorded poses, the real S5 axis is fitted. That corrects the tag layout and measures S5's offset and direction (Record pose, Fit S5 axis).
+- **Tag layout calibrated:** from two live snapshot pairs and the close-up photos, the S5 axis is 10,6° / 0,5 cm from the model's. The wrist + gripper pair fit improved from 17–50 px to 3–9 px.
+- **Camera views** (in the tab, the Cameras view and full screen) have a toolbar: simulation, mat, markers, tags, parts, ghost, frame opacity, track, full screen.
+- Tag axes are made orthonormal everywhere. A tag's quarter turn is reported only on clear evidence.
+- **Open:** the distance from the S5 hub to tag 107 (the joint motion cannot show it). See [`docs/two-camera-tracking.md`](docs/two-camera-tracking.md).
+
 ## 2026-10-13 (late afternoon): Rigid-part tracking with tags 106–109, both cameras side by side
 
 - **Tags on the arm:**

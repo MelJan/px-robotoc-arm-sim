@@ -179,3 +179,10 @@ button.danger-solid { font-weight: 650; }
 .cam-stage:fullscreen { background: #000; aspect-ratio: auto; display: flex; align-items: center; justify-content: center; outline: none; }
 .cam-stage:fullscreen > canvas, .cam-stage:fullscreen > img { inset: 0; margin: auto; width: min(100vw, 177.78vh); height: min(56.25vw, 100vh); }
 .cam-stages:fullscreen { background: #000; padding: 8px; display: grid; grid-template-columns: 1fr 1fr; align-content: center; gap: 8px; }
+.cam-bar { position: absolute; right: 6px; top: 6px; display: flex; gap: 3px; align-items: center; opacity: 0.25; transition: opacity .15s; }
+.cam-stage:hover .cam-bar, .cam-stage:fullscreen .cam-bar { opacity: 1; }
+.cam-bar button { padding: 1px 7px; font-size: 11px; background: rgba(20,24,30,.78); color: #ccd; border: 1px solid rgba(255,255,255,.15); border-radius: 6px; }
+.cam-bar button.on { color: #fff; border-color: var(--accent); background: rgba(14,138,119,.85); }
+.cam-bar .cam-op { width: 70px; }
+.cam-stage:fullscreen .cam-bar { top: 10px; right: 10px; z-index: 3; }
+.cam-stage:fullscreen .cam-bar button { font-size: 13px; padding: 3px 10px; }

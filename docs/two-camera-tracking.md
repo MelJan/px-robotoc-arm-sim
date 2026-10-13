@@ -11,14 +11,23 @@ The second camera's routes were read from the controller's `/openapi.json` on 20
 
 AprilTags (family 36h11, 19 mm black square, white margin) on the arm, in two rigid parts (`images/photos/arm-tags-106-107-109-*.jpg`, `arm-tags-108-109-*.jpg`). Tags on one part move together and act as one object. One camera may see one tag of a part and the other camera another, and the views still meet in one pose. Each part has one degree of freedom relative to the part before it.
 
-| Part | Moved by | Tag | Where (`js/config.js` `ARM_TAGS`, link frame, cm) |
-|------|----------|-----|-----------------------------------------------------|
-| Wrist (S5 servo + its bracket) | S1–S4, turns about S4 | 109 | S5 servo's wide face, normal −Y, centre (1,0, −1,1, 4,3) |
-| | | 108 | S5 bracket's side plate on the horn side, normal +X, centre (3,9, 0,2, 3,2) |
-| Gripper (S6 servo + jaws) | S1–S5, turns about S5 | 107 | S6 servo, face toward the wrist, normal −Z, centre (1,9, −2,5, 0,4) |
-| | | 106 | S6 servo, cable end, normal +X, centre (4,4, −2,0, 1,6) |
+| Part | Moved by | Tag | Where |
+|------|----------|-----|-------|
+| Wrist (S5 servo + its bracket) | S1–S4, turns about S4 | 109 | S5 servo's wide face |
+| | | 108 | S5 bracket's side plate, horn side (+X) |
+| Gripper (S6 servo + jaws) | S1–S5, turns about S5 | 107 | S6 servo, face toward the wrist |
+| | | 106 | S6 servo, cable end |
 
-How the layout was measured:
+The numbers (centre, normal, up per tag, in its link frame) are in `js/config.js` `ARM_TAGS`.
+
+How the layout was measured (in three steps, each better than the last):
+- **From the arm model and the photos:** 109 and 107 were placed from the model, and 108 and 106 relative to them from the close-up photos.
+- **Joint axis, 2026-10-13:** the S5 joint can only turn the gripper about one axis fixed in the wrist. Three poses with S5 120° apart (two live snapshot pairs and the close-up photos; the team had moved the arm in between) were fitted with `js/jointfit.js estimateJointAxis`.
+  - The axis came out 10,6° and 0,5 cm from the model's.
+  - The corrected layout brought the wrist + gripper pair fit from 17–50 px down to 3–9 px.
+- **Still open:** how far along the S5 axis the gripper tags sit relative to the flange cannot be seen from joint motion. The fit puts 107 about 2,6 cm below the flange, and the photos roughly agree, but the gripper model puts its S6 servo higher. **Measure the distance from the S5 hub to tag 107's centre.**
+
+Older notes on the layout:
 - 109 and 107 are placed from the arm model.
 - 108 and 106 are placed relative to them from the close-up photos. In each photo both tags' poses come from their corners (OpenCV IPPE), and their relative pose barely depends on the phone's focal length. The three gripper photos agree to 2 mm.
 - Each tag's in-plane turn on its face comes from the same photos, and the tracker checks it in every frame (it reports a tag "stuck on turned" when it differs).
@@ -65,6 +74,19 @@ All of it runs in the browser (Camera tab), in plain JS. The mat markers are ArU
   - "Learn tag layout" measures where each seen tag sits on its part.
   - "Cameras" in the main toolbar shows both cameras large instead of the 3D view; ⛶ makes one camera, or both, full screen.
 
+### Joints: tags across parts (`js/jointfit.js`)
+
+Each joint lets the child part only turn about one axis fixed in the parent part, so tags on neighbouring parts are combined with the joint's single degree of freedom:
+- **Per frame** ("Wrist + gripper together" in the Arm tracking box):
+  - The wrist pose (6 numbers) and S5 (1 number) are fitted to the tags of both parts in all cameras.
+  - A gripper tag helps fix the wrist and vice versa: 7 unknowns instead of 12.
+  - If this fit is much worse than the two parts alone, the tag anchors or the axis are off.
+- **Across frames** (Record pose, Fit S5 axis):
+  - Record 3 or more poses with different S5 angles. The child's motion relative to the parent then gives the real axis.
+  - The result: the tag layout of both parts corrected to it (used at once, and copied for `config.js`), and S5 measured against commanded (slope = direction, offset = the error of S5's angle at HOME).
+  - The same works for S4 and further joints once the forearm and upper arm carry tags.
+- **The joint-chain fit** (all joints from the base) then uses the corners in the turn each tag is found in.
+
 ## Checks
 
 | Check | Result |
@@ -73,6 +95,7 @@ All of it runs in the browser (Camera tab), in plain JS. The mat markers are ArU
 | Detector on the photos | Tag 72 found in all three close-ups, and the printed sheets' tags in the overviews. Tag 71 needs a small threshold window (it sits on the black servo with a thin white margin); the tracker tries four settings |
 | In the page, frames rendered by the simulator from two cameras (headless Chrome) | Both cameras recovered from the mat markers to 4 to 7 mm. Tag 72 triangulated within 1 mm of the model. Joint angles within 1,3° of the commanded pose. Stacked blue-on-orange found at levels 0 and 1, a single cube to 1 mm in height |
 | Live snapshots of both cameras, 2026-10-13 (one GET each), tags 106–109 | Single-tag poses: 0,1 to 1,4 px. Wrist part: 2,5 px (109 in both cameras). Gripper part: 1,5 px (107 in both, 106 in the webcam). The fitted gripper's tool axis lines up with the wrist's to 0,998 and is turned 22° about S5, as the joint allows, but sits about 4 cm from the model's place: the anchor positions of 109 / 107 on their parts are still model guesses. The joint-chain fit to the commanded pose is off by 30 to 60° on S2 to S4: that is the uncalibrated HOME angles |
+| After the axis calibration, both live snapshot pairs in the page | Wrist 1,3 / 2,5 px, gripper 2,3 / 1,8 px, wrist + gripper together 4,0 / 3,0 px (was 17,7). The joint-chain fit puts each part within 0,2 to 0,9 cm of its tag-only estimate |
 | Known limit | A cube half hidden in one view (behind the gripper) is placed wrong; its rays then miss by several mm and it is reported as "between levels", not placed |
 
 Real frames from both cameras have not been run yet. They need the server started with `--camera http://10.102.4.103:8765` (one snapshot per camera on request, or live video).

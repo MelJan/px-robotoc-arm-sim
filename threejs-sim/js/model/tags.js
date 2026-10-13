@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { tagBits } from '../apriltag36h11.js';
 import { canvasTexture } from './textures.js';
+import { tagAxes } from '../armtrack.js';
 import { V, mesh, at, orient, box, cyl } from './geometry.js';
 
 const materials = new Map();
@@ -28,7 +29,7 @@ function tagMaterial(id) {
 export function buildTag(tag) {
   const side = tag.size * 10 / 8;
   const m = mesh(new THREE.PlaneGeometry(side, side), tagMaterial(tag.id), false);
-  const n = V(...tag.normal), up = V(...tag.up), right = up.clone().cross(n);
+  const ax = tagAxes(tag), n = V(...ax.n), up = V(...ax.up), right = V(...ax.right);
   orient(m, right, up, n);
   m.position.set(...tag.centre).addScaledVector(n, 0.012);
   m.name = `tag ${tag.id}`;

@@ -13,7 +13,7 @@
 // Frames: a pose is { R (row-major 3x3, board <- part), p (cm) }, like kinematics.js fk() frames.
 
 import { ARM_TAGS } from './config.js';
-import { tagPoints, projectBoard, tableToBoardPt, camWeight } from './armtrack.js';
+import { tagPoints, projectBoard, tableToBoardPt, camWeight, tagAxes } from './armtrack.js';
 import { rodrigues, rotvec, solve, homography } from './calib.js';
 
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
@@ -31,7 +31,7 @@ const fromRows = M => [...M[0], ...M[1], ...M[2]];
 
 /** A tag's axes in its link frame: right, up, normal as columns. */
 function tagBasis(tag) {
-  const n = norm(tag.normal), up = norm(tag.up), right = cross(up, n);
+  const { n, up, right } = tagAxes(tag);
   return fromCols(right, up, n);
 }
 
@@ -95,7 +95,7 @@ function rotationTaking(a, b, R) {
 }
 
 /** Levenberg-Marquardt over a pose { R, p }; resid(pose) -> residuals. Returns { R, p, cost }. */
-function refinePose(start, resid, iterations = 50) {
+function refinePose(start, resid, iterations = 300) {
   const pack = P => [...rotvec(toRows(P.R)), ...P.p];
   const unpack = v => ({ R: fromRows(rodrigues(v.slice(0, 3))), p: v.slice(3, 6) });
   const sq = r => r.reduce((a, x) => a + x * x, 0);
@@ -166,7 +166,9 @@ export function fitPartPose(link, observations, { init = null, iterations = 60 }
   let pose = null, shifts = null, score = Infinity;
   for (const st of starts) {
     const sh = bestShifts(st), c = total(st, sh) / obs.length;
-    const sc = c + (init ? (rotDeg(st.R, init.R) / 15) ** 2 : 0) + 0.5 * Object.values(sh).filter(k => k).length;
+    // the configured layout is measured: a tag turned on its face only when the other tags clearly show it;
+    // the commanded pose only breaks ties (it can be tens of degrees off before the HOME calibration)
+    const sc = c + (init ? Math.min(3, 0.3 * (rotDeg(st.R, init.R) / 15) ** 2) : 0) + 25 * Object.values(sh).filter(k => k).length;
     if (sc < score) { score = sc; pose = st; shifts = sh; }
   }
   const pack = P => [...rotvec(toRows(P.R)), ...P.p];

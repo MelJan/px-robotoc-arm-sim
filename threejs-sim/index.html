@@ -266,6 +266,11 @@
           <label class="inline" title="Each part where its tags alone put it (rigid-body fit), drawn over the frame"><input type="checkbox" id="cam-show-bodies" checked> Estimated parts</label>
           <button id="cam-arm-learn" title="Measure where each seen tag sits on its part (relative to the part's fit) and use that">Learn tag layout</button>
         </div>
+        <div class="row wrap">
+          <button id="cam-arm-record" title="Store the wrist and gripper poses of this frame, with the commanded S5 angle">Record pose</button>
+          <button id="cam-arm-axis" title="From 3 or more recorded poses with different S5 angles: the real S5 axis, corrected tag layout, S5 offset at HOME">Fit S5 axis</button>
+          <button id="cam-arm-clear">Clear poses</button>
+        </div>
         <div id="cam-arm-out" class="note"></div>
         <p class="note">Tags on one rigid part move together and count as one object: one camera may see one tag of a part and the other camera another, and both still meet in one pose. The wrist part turns only about S4 relative to the forearm, the gripper only about S5 relative to the wrist, so few views constrain the fit. Each tag seen by two cameras is also triangulated on its own. Tracked minus commanded angle is what the HOME calibration still gets wrong.</p>
       </details>

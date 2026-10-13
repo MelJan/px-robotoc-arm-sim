@@ -100,15 +100,18 @@ export const CAMERAS = [
 // the corners of 107 and 109 from both cameras, 2026-10-13). Positions come from the photos (2 to 3 mm);
 // "up" is only a first guess: the tracker finds each tag's real turn from its corners.
 export const ARM_TAGS = [
-  // wrist part (moves with S1..S4): S5 servo and its bracket. 109 placed from the model; 108 relative to 109
-  // measured in photos/arm-tags-108-109-wrist-front.jpg (both tags' poses, OpenCV IPPE): on the bracket's
-  // +X side plate, 2,8 / 1,3 / -1,1 cm from 109
-  { key: 'wrist-s5', id: 109, link: 'wrist', centre: [1.035, -1.06, 4.3], normal: [0, -1, 0], up: [-1, 0, 0], size: 1.9, on: 'S5 servo, wide face' },
-  { key: 'wrist-plate', id: 108, link: 'wrist', centre: [3.88, 0.24, 3.17], normal: [1, 0, 0], up: [0, 0, 1], size: 1.9, on: 'S5 bracket side plate, +X (horn side)' },
-  // gripper part (moves with S1..S5): S6 servo. 107 placed from the model; 106 relative to 107 measured in
-  // photos/arm-tags-106-107-109-*.jpg (three photos agree to 2 mm): 2,5 / 0,5 / 1,2 cm from 107
-  { key: 'hand-top', id: 107, link: 'hand', centre: [1.9, -2.5, 0.38], normal: [0, 0, -1], up: [-1, 0, 0], size: 1.9, on: 'S6 servo, face toward the wrist' },
-  { key: 'hand-end', id: 106, link: 'hand', centre: [4.4, -2.0, 1.58], normal: [1, 0, 0], up: [0, 0, 1], size: 1.9, on: 'S6 servo, cable end' },
+  // Calibrated 2026-10-13 from 3 poses (2 live snapshot pairs + the close-up photos, S5 spread 120 degrees,
+  // js/jointfit.js estimateJointAxis): the layouts that make both parts turn about one S5 axis. The S5 axis
+  // came out 10,6 degrees and 0,5 cm from the model's, the circle fit 0,55 cm; the wrist+gripper pair fit
+  // dropped from 17-50 px to 3-9 px. Open: how far along the S5 axis the gripper tags sit relative to the
+  // flange is not observable from joint motion (here the gripper tags end 2,6 cm below the flange, which the
+  // photos roughly confirm, but the gripper model puts its S6 servo higher). Measure: S5 hub to tag 107 centre.
+  // wrist part (moves with S1..S4): S5 servo and its bracket
+  { key: 'wrist-s5', id: 109, link: 'wrist', centre: [1.02, -0.73, 3.98], normal: [-0.01, -1, -0.06], up: [-0.98, -0.01, 0.17], size: 1.9, on: 'S5 servo, wide face' },
+  { key: 'wrist-plate', id: 108, link: 'wrist', centre: [3.63, 0.65, 2.45], normal: [0.98, 0.01, -0.17], up: [0.17, -0.06, 0.98], size: 1.9, on: 'S5 bracket side plate, +X (horn side)' },
+  // gripper part (moves with S1..S5): S6 servo
+  { key: 'hand-top', id: 107, link: 'hand', centre: [-1.69, -0.99, 2.87], normal: [-0.09, -0.29, -0.95], up: [-0.99, 0, 0.11], size: 1.9, on: 'S6 servo, face toward the wrist' },
+  { key: 'hand-end', id: 106, link: 'hand', centre: [0.86, -0.18, 3.57], normal: [0.99, 0, -0.11], up: [0.09, 0.29, 0.95], size: 1.9, on: 'S6 servo, cable end' },
 ];
 /** The rigid parts that carry tags: what moves them and where their joint axis is (for the overlay). */
 export const ARM_PARTS = {
