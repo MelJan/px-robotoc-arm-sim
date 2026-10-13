@@ -15,7 +15,8 @@
 //                                                       GETs and /api/stop, motion blocked
 //   node server.mjs --controller http://10.102.4.103:8765 --allow-motion
 //                                                     + motion to the real arm (after the sim check)
-//   node server.mjs --camera http://10.102.4.103:8765 the REAL camera for /api/camera/* (GET only)
+//   node server.mjs --camera http://10.102.4.103:8765 the REAL cameras: /api/camera/* (OAK) and
+//                                                     /api/camera2/* (webcam), GET only
 //   --port 8770  --host 127.0.0.1                     (--mock is accepted and changes nothing)
 //
 // The real controller only accepts POSTs whose Origin is its own address; this server sends it.
@@ -78,8 +79,8 @@ function readBody(req) {
 async function proxy(req, res, base = CONTROLLER, cameraOnly = false) {
   const target = new URL(req.url, base);
   const isPost = req.method === 'POST';
-  if (cameraOnly && (req.method !== 'GET' || !target.pathname.startsWith('/api/camera/')))
-    return sendJson(res, 403, { error: 'The camera link only reads /api/camera/* (GET).' });
+  if (cameraOnly && (req.method !== 'GET' || !/^\/api\/camera2?\//.test(target.pathname)))
+    return sendJson(res, 403, { error: 'The camera link only reads /api/camera/* and /api/camera2/* (GET).' });
   if (isPost && !ALLOW_MOTION && target.pathname !== '/api/stop')
     return sendJson(res, 403, { error: 'Motion is disabled in this proxy. Restart server.mjs with --allow-motion to send moves.' });
   if (!['GET', 'POST'].includes(req.method)) return sendJson(res, 405, { error: 'GET or POST only' });
@@ -152,7 +153,7 @@ function sendError(res, e) {
 // /api: the robot's low-level API, answered by the active backend; /api/backend switches it.
 async function armApi(req, res) {
   const p = new URL(req.url, 'http://x').pathname.replace(/^\/api\//, '');
-  if (p.startsWith('camera/')) {
+  if (/^camera2?\//.test(p)) {                     // the OAK (camera) and the webcam (camera2), read only
     if (CAMERA) return await proxy(req, res, CAMERA, true);
     return mockCamera(req, res, p);
   }
@@ -191,6 +192,7 @@ async function simApi(req, res) {
 function mockCamera(req, res, p) {
   const f = path.join(REPO, 'docs', 'images', 'photos', 'controller-camera-2026-10-12.jpg');
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'GET only' });
+  if (p.startsWith('camera2/')) return sendJson(res, 404, { error: 'No mock frame for camera2 (the webcam): start with --camera http://10.102.4.103:8765, or load an image file' });
   if (p === 'camera/status') {
     return sendJson(res, 200, { enabled: true, source: 'mock', available: true, frame_age_ms: 0,
       latest_frame: { delivered_fps: 2, time_us: 30000, iso: 200, lens_position: 65, captured_at: new Date().toISOString() } });

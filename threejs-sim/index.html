@@ -47,6 +47,7 @@
       <button data-view="top">Top</button>
       <button data-view="side">Side</button>
       <button data-view="oak">OAK camera</button>
+      <button data-view="webcam">Webcam</button>
       <span class="sep"></span>
       <label><input type="checkbox" id="show-path" checked> Path</label>
       <label><input type="checkbox" id="show-shapes"> Collision shapes</label>
@@ -184,7 +185,10 @@
     <!-- ======================= Camera ======================= -->
     <div id="tab-camera" hidden>
       <section class="card hero">
-        <h2>OAK camera <small>simulated view with the real frame on top</small></h2>
+        <h2><span id="cam-title">OAK on the stand</span> <small>simulated view with the real frame on top</small></h2>
+        <div class="row wrap">
+          <label class="inline">Camera <select id="cam-select"></select></label>
+        </div>
         <div class="cam-stage">
           <canvas id="cam-sim" width="960" height="540"></canvas>
           <img id="cam-photo" alt="" style="opacity:0.5">
@@ -213,6 +217,7 @@
         <summary>Calibration <small>camera pose and focal length from the mat markers</small></summary>
         <div class="row wrap">
           <button id="cam-auto" class="primary big" title="Detects the mat's ArUco markers in the frame above and fits the camera to their corners">Find markers &amp; calibrate</button>
+          <button id="cam-auto-all" title="The same for every camera that has a frame">Calibrate all cameras</button>
           <label class="inline" title="Detect the markers and refit the camera whenever a new snapshot, video or image is loaded"><input type="checkbox" id="cam-auto-on" checked> On every new frame</label>
           <label class="inline" title="While tracking, re-detect the markers and refit the camera every 5 s (for a camera that gets moved)"><input type="checkbox" id="cam-keep"> While tracking</label>
         </div>
@@ -243,9 +248,21 @@
       </details>
 
       <details open>
-        <summary>Cube recognition <small>cubes lying on the mat</small></summary>
+        <summary>Arm tracking <small>AprilTags 71, 72 on the arm, seen by both cameras</small></summary>
         <div class="row wrap">
-          <button id="cam-detect" class="primary big">Find cubes</button>
+          <button id="cam-arm" class="primary big" title="Finds the tags in every camera's frame, triangulates them and fits the joint angles">Track the arm</button>
+          <label class="inline"><input type="checkbox" id="cam-arm-ghost" checked> Show the tracked pose as a ghost</label>
+          <label class="inline" title="Also fit the tag corners (needs the tags' orientation on the arm to be right)"><input type="checkbox" id="cam-arm-corners"> Use corners</label>
+          <label class="inline"><input type="checkbox" id="cam-track-arm" checked> While tracking</label>
+        </div>
+        <div id="cam-arm-out" class="note"></div>
+        <p class="note">Both cameras need a frame (live video is best) and a calibration from the mat markers. Each tag seen by two cameras is triangulated; the joint angles are fitted to all tag views. Tracked minus commanded angle is what the HOME calibration still gets wrong.</p>
+      </details>
+
+      <details open>
+        <summary>Cube recognition <small>in 3D from both cameras (stacked and held cubes too); one camera: cubes on the mat</small></summary>
+        <div class="row wrap">
+          <button id="cam-detect" class="primary big" title="Finds the cubes in every camera's frame; cubes seen by two cameras are located in 3D where the viewing rays meet">Find cubes</button>
           <button id="cam-detect-use" disabled>Put them into the sim</button>
         </div>
         <div class="row wrap">

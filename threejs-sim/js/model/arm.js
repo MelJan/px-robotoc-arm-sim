@@ -3,11 +3,12 @@
 // horn and claw shapes follow the photos and the kit drawings.
 
 import * as THREE from 'three';
-import { ARM } from '../config.js';
+import { ARM, ARM_TAGS } from '../config.js';
 import { V, at, orient, box, cyl, plate, hornHoles, bake, joint } from './geometry.js';
 import { screwAt, nut, servo, horn, sidePlate, bend, zipTie } from './parts.js';
 import { buildGripper } from './gripper.js';
 import { buildCables } from './cables.js';
+import { buildTag } from './tags.js';
 
 const RAD = Math.PI / 180;
 
@@ -168,6 +169,10 @@ export function buildArm(M) {
   // ---- hand (flange frame, Z = tool axis)
   const hand = joint(new THREE.Group()); hand.position.z = ARM.L4; wrist.add(hand);
   const gripper = buildGripper(M); hand.add(gripper.group);
+
+  // AprilTags for tracking the real arm with the cameras (config.js ARM_TAGS)
+  const linkGroups = { turret, shoulder, elbow, wrist, hand };
+  for (const t of ARM_TAGS) linkGroups[t.link].add(buildTag(t));
 
   for (const g of [root, turret, shoulder, elbow, wrist, hand, ...gripper.joints]) bake(g);
 

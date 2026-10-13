@@ -1,4 +1,5 @@
-// ArUco marker detection for the mat markers (DICT_4X4_50, ids 0..5), in plain JS.
+// Marker detection in plain JS: the mat's ArUco markers (DICT_4X4_50, ids 0..5) and the AprilTags
+// on the arm (36h11, e.g. 71 and 72; family '36h11').
 // Works on any camera position: the camera is then calibrated from the detected corners.
 //
 // 1. Grey image, adaptive threshold (local mean over a window, integral image).
@@ -10,12 +11,22 @@
 // 5. Corners are returned in OpenCV's order (clockwise from the marker's top-left), the same
 //    order as calib.js MARKER_CORNERS, so they can go straight into the calibration.
 
+import { APRILTAG_36H11, tagBits } from './apriltag36h11.js';
+
 // DICT_4X4_50 inner bits for ids 0..5, rows top to bottom, 1 = white (from OpenCV).
 export const DICT = {
   0: ['1011', '0101', '0011', '0010'], 1: ['0000', '1111', '1001', '1010'], 2: ['0011', '0011', '0010', '1101'],
   3: ['1001', '1001', '0100', '0110'], 4: ['0101', '0100', '1001', '1110'], 5: ['0111', '1001', '1100', '1101'],
 };
 const CODES = Object.entries(DICT).map(([id, rows]) => ({ id: Number(id), bits: rows.join('').split('').map(Number) }));
+let CODES_36H11 = null;
+/** Code lists per family: { n (data cells per side), maxErr (bits), codes: [{ id, bits }] }. */
+function family(name, ids) {
+  if (name === '4x4') return { n: 4, maxErr: 1, codes: CODES };
+  if (name !== '36h11') throw new Error(`unknown marker family ${name}`);
+  CODES_36H11 ??= APRILTAG_36H11.map((_, id) => ({ id, bits: tagBits(id) }));
+  return { n: 6, maxErr: 2, codes: ids ? CODES_36H11.filter(c => ids.includes(c.id)) : CODES_36H11 };
+}
 
 /** Grey values (0..255) from RGBA ImageData. */
 export function toGrey({ width, height, data }) {
@@ -109,39 +120,41 @@ function refine(quad, boundary) {
   return out;
 }
 
-/** Read the 6 x 6 cells of a quad; returns { bits (16), border ok } or null. */
-function readBits(g, w, h, quad) {
-  const map = squareToQuad(quad), samples = [];
-  for (let r = 0; r < 6; r++) for (let c = 0; c < 6; c++) {
+/** Read the (n + 2) x (n + 2) cells of a quad (black border + n x n data); returns the n * n data bits or null. */
+function readBits(g, w, h, quad, n = 4) {
+  const map = squareToQuad(quad), samples = [], G = n + 2, N = G * G;
+  for (let r = 0; r < G; r++) for (let c = 0; c < G; c++) {
     let s = 0;
-    for (const [du, dv] of [[0.35, 0.35], [0.65, 0.35], [0.35, 0.65], [0.65, 0.65], [0.5, 0.5]]) { const [x, y] = map((c + du) / 6, (r + dv) / 6); s += bilinear(g, w, h, x, y); }
+    for (const [du, dv] of [[0.35, 0.35], [0.65, 0.35], [0.35, 0.65], [0.65, 0.65], [0.5, 0.5]]) { const [x, y] = map((c + du) / G, (r + dv) / G); s += bilinear(g, w, h, x, y); }
     samples.push(s / 5);
   }
-  // Otsu threshold over the 36 cell means
+  // Otsu threshold over the cell means
   const sorted = samples.slice().sort((a, b) => a - b);
-  let best = 0, thr = sorted[17];
-  for (let i = 1; i < 36; i++) {
+  let best = 0, thr = sorted[N >> 1];
+  for (let i = 1; i < N; i++) {
     const a = sorted.slice(0, i), b = sorted.slice(i), ma = a.reduce((s, v) => s + v, 0) / a.length, mb = b.reduce((s, v) => s + v, 0) / b.length;
     const v = a.length * b.length * (ma - mb) ** 2;
     if (v > best) { best = v; thr = (sorted[i - 1] + sorted[i]) / 2; }
   }
-  if (sorted[35] - sorted[0] < 25) return null;                  // no contrast
-  const cell = (r, c) => (samples[r * 6 + c] > thr ? 1 : 0);
+  if (sorted[N - 1] - sorted[0] < 25) return null;                // no contrast
+  const cell = (r, c) => (samples[r * G + c] > thr ? 1 : 0);
   let borderWhite = 0;
-  for (let i = 0; i < 6; i++) borderWhite += cell(0, i) + cell(5, i) + (i > 0 && i < 5 ? cell(i, 0) + cell(i, 5) : 0);
+  for (let i = 0; i < G; i++) borderWhite += cell(0, i) + cell(G - 1, i) + (i > 0 && i < G - 1 ? cell(i, 0) + cell(i, G - 1) : 0);
   if (borderWhite > 1) return null;
   const bits = [];
-  for (let r = 1; r < 5; r++) for (let c = 1; c < 5; c++) bits.push(cell(r, c));
+  for (let r = 1; r <= n; r++) for (let c = 1; c <= n; c++) bits.push(cell(r, c));
   return bits;
 }
 
-const rotCW = b => { const o = new Array(16); for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) o[r * 4 + c] = b[(3 - c) * 4 + r]; return o; };
+const rotCW = (b, n = 4) => { const o = new Array(n * n); for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) o[r * n + c] = b[(n - 1 - c) * n + r]; return o; };
 
 /**
- * Detect the mat markers. img: ImageData. Returns { [id]: [[x,y] x 4] } in OpenCV corner order,
+ * Detect markers. img: ImageData. Returns { [id]: [[x,y] x 4] } in OpenCV corner order,
  * plus `candidates` (quads looked at) for display.
+ * family: '4x4' (the mat, default) or '36h11' (AprilTags; `ids` limits the search, e.g. [71, 72]).
  */
-export function detectMarkers(img, { window = 31, offset = 7, minArea = 60, maxArea = 60000 } = {}) {
+export function detectMarkers(img, { window = 31, offset = 7, minArea = 60, maxArea = 60000, family: fam = '4x4', ids = null } = {}) {
+  const F = family(fam, ids);
   const { width: w, height: h } = img;
   const g = toGrey(img);
   // integral image for the local mean
@@ -186,21 +199,21 @@ export function detectMarkers(img, { window = 31, offset = 7, minArea = 60, maxA
     if (Math.min(...sides) < 7 || Math.max(...sides) / Math.min(...sides) > 4) continue;
     const q = refine(quad, boundary);
     candidates.push(q);
-    const bits = readBits(g, w, h, q);
+    const bits = readBits(g, w, h, q, F.n);
     if (!bits) continue;
     // Rotate the observation clockwise k times until it equals a code. Then the observation is the
     // code rotated clockwise m = (4 - k) % 4 times, and the code's top-left cell sits at quad corner m
     // (one clockwise turn moves the top-left cell to the top-right corner).
     let b = bits;
     for (let k = 0; k < 4; k++) {
-      for (const code of CODES) {
-        let d = 0; for (let i = 0; i < 16; i++) d += b[i] !== code.bits[i];
-        if (d <= 1 && !found[code.id]) {
+      for (const code of F.codes) {
+        let d = 0; for (let i = 0; i < b.length && d <= F.maxErr; i++) d += b[i] !== code.bits[i];
+        if (d <= F.maxErr && !found[code.id]) {
           const m = (4 - k) % 4;
           found[code.id] = [0, 1, 2, 3].map(i => q[(m + i) % 4]);
         }
       }
-      b = rotCW(b);
+      b = rotCW(b, F.n);
     }
   }
   return { markers: found, candidates };

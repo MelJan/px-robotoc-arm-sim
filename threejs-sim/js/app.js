@@ -2,7 +2,9 @@
 
 import * as THREE from 'three';
 import { createView } from './render.js';
-import { SERVOS, MAT, CAMERA, CUBE, COLOURS, PLAN, CONTROLLER } from './config.js';
+import { SERVOS, MAT, CAMERA, CAMERAS, CUBE, COLOURS, PLAN, CONTROLLER } from './config.js';
+import { calFromLookAt } from './armtrack.js';
+import { buildWebcam } from './model/tags.js';
 import { fk, anglesFromCounts, countsFromAngles, ikTopDown, guardViolations, camToBoard, toolYawAndTilt, Unreachable } from './kinematics.js';
 import { armShapes } from './collision.js';
 import { SimController, ControllerError } from './controller.js';
@@ -62,37 +64,53 @@ ghost.root.traverse(o => { o.castShadow = false; o.receiveShadow = false; });
 for (const c of ghost.root.children) if (c.isMesh) c.visible = false;   // the base never moves; draw only the moving links
 ghost.root.visible = false; scene.add(ghost.root);
 
-// The OAK camera: fitted to the mat markers (camview.js); the fit is kept per browser.
-const CAM_KEY = 'pxsim.camera.v1';
-CAMERA.calib = defaultCalibration();
-try { const c = JSON.parse(localStorage.getItem(CAM_KEY)); if (c && c.R && c.f) CAMERA.calib = c; } catch { /* default fit */ }
-let oak = null;
-function camPose() {
-  const cal = CAMERA.calib, C = cal.centre, z = cal.R[2];
-  const s = -C[2] / z[2];                                   // optical axis meets the mat
-  return { pos: tableToBoard(C), target: tableToBoard([C[0] + s * z[0], C[1] + s * z[1], 0]) };
+// The cameras (config.js CAMERAS): each fitted to the mat markers in its own frames (camview.js); the
+// fits are kept per browser. Before a fit: the OAK's fit to the saved frame, the webcam's first guess.
+const CAM_KEY = id => (id === 'oak' ? 'pxsim.camera.v1' : `pxsim.camera.${id}.v1`);
+const camCals = {};
+for (const c of CAMERAS) {
+  camCals[c.id] = c.id === 'oak' ? defaultCalibration() : calFromLookAt(c.posMm, c.lookAtMm, c.fPx, c.w, c.h);
+  try { const k = JSON.parse(localStorage.getItem(CAM_KEY(c.id))); if (k && k.R && k.f) camCals[c.id] = k; } catch { /* default */ }
 }
-/** Render with the OAK camera's own body hidden (it would block its view). */
-const hideForCamera = fn => { const v = oak.visible; oak.visible = false; fn(); oak.visible = v; };
-function placeMatAndCamera() {
-  table.userData.placeMat(MAT.sToEdge);
-  if (oak) scene.remove(oak);
-  const p = camPose(); oak = buildCamera(M, p.pos, p.target);
+CAMERA.calib = camCals.oak;
+const camBodies = {};
+function camPose(cal) {
+  const C = cal.centre, z = cal.R[2];
+  const s = z[2] < -0.05 ? -C[2] / z[2] : 500;              // where the optical axis meets the mat (or 50 cm ahead)
+  return { pos: tableToBoard(C), target: tableToBoard([C[0] + s * z[0], C[1] + s * z[1], C[2] + s * z[2]]) };
+}
+/** Render with the cameras' own bodies hidden (they would block a camera's view). */
+const hideForCamera = fn => {
+  const was = Object.values(camBodies).map(b => b.visible);
+  Object.values(camBodies).forEach(b => { b.visible = false; });
+  fn();
+  Object.values(camBodies).forEach((b, i) => { b.visible = was[i]; });
+};
+function placeCamera(c) {
+  if (camBodies[c.id]) scene.remove(camBodies[c.id]);
+  const cal = camCals[c.id], p = camPose(cal);
+  const body = c.id === 'oak' ? buildCamera(M, p.pos, p.target) : buildWebcam(M, p.pos, p.target);
   // viewing pyramid: rays through the four image corners down to the desk (at most 1,5 m)
-  const cal = CAMERA.calib, C = tableToBoard(cal.centre), pts = [];
-  for (const [u, v] of [[0, 0], [CAMERA.w, 0], [CAMERA.w, CAMERA.h], [0, CAMERA.h]]) {
+  const C = tableToBoard(cal.centre), pts = [];
+  for (const [u, v] of [[0, 0], [c.w, 0], [c.w, c.h], [0, c.h]]) {
     const d = [(u - cal.cx) / cal.f, (v - cal.cy) / cal.f, 1];
     const wd = [0, 1, 2].map(i => cal.R[0][i] * d[0] + cal.R[1][i] * d[1] + cal.R[2][i] * d[2]);   // ray in the mat frame
-    const s = wd[2] < -1e-6 ? Math.min((-10 - cal.centre[2]) / wd[2], 1500 / Math.hypot(...wd)) : 1500 / Math.hypot(...wd);   // desk is 10 mm below the mat
-    pts.push(tableToBoard(cal.centre.map((c, i) => c + s * wd[i])));
+    const sc = wd[2] < -1e-6 ? Math.min((-10 - cal.centre[2]) / wd[2], 1500 / Math.hypot(...wd)) : 1500 / Math.hypot(...wd);   // desk is 10 mm below the mat
+    pts.push(tableToBoard(cal.centre.map((x, i) => x + sc * wd[i])));
   }
   const seg = [];
   for (let i = 0; i < 4; i++) seg.push(...C, ...pts[i], ...pts[i], ...pts[(i + 1) % 4]);
   const frustum = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(seg, 3)),
-    new THREE.LineBasicMaterial({ color: 0x0e8a77, transparent: true, opacity: 0.55 }));
-  frustum.name = 'camera-frustum';
-  oak.add(frustum);
-  scene.add(oak);
+    new THREE.LineBasicMaterial({ color: c.id === 'oak' ? 0x0e8a77 : 0x6b4fd6, transparent: true, opacity: 0.55 }));
+  frustum.name = `${c.id}-frustum`;
+  body.add(frustum);
+  body.name = c.id;
+  camBodies[c.id] = body;
+  scene.add(body);
+}
+function placeMatAndCamera() {
+  table.userData.placeMat(MAT.sToEdge);
+  for (const c of CAMERAS) placeCamera(c);
 }
 placeMatAndCamera();
 
@@ -172,13 +190,15 @@ const VIEWS = {
   orbit: () => { camera.fov = 36; camera.position.set(-30, 50, 30); controls.target.set(0, 11, 7); },
   top: () => { camera.fov = 36; camera.position.set(0, 15.5, 95); controls.target.set(0, 15.5, 0); },
   side: () => { camera.fov = 36; camera.position.set(75, 12, 14); controls.target.set(0, 12, 12); },
-  oak: () => { oakView = true; controls.enabled = false; applyOakView(); },
+  oak: () => { oakView = 'oak'; controls.enabled = false; applyOakView(); },
+  webcam: () => { oakView = 'webcam'; controls.enabled = false; applyOakView(); },
 };
 let oakView = false;
 function applyOakView() {
   const r = canvas.getBoundingClientRect();
-  applyPinhole(camera, CAMERA.calib, r.width, r.height);
-  controls.target.set(...camPose().target);
+  const cal = camCals[oakView];
+  applyPinhole(camera, cal, r.width, r.height);
+  controls.target.set(...camPose(cal).target);
 }
 function leaveOakView() {
   if (!oakView) return;
@@ -188,8 +208,8 @@ function leaveOakView() {
 }
 document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => {
   document.querySelectorAll('[data-view]').forEach(x => x.classList.toggle('on', x === b));
-  if (b.dataset.view !== 'oak') { leaveOakView(); VIEWS[b.dataset.view](); camera.updateProjectionMatrix(); controls.update(); }
-  else VIEWS.oak();
+  if (b.dataset.view !== 'oak' && b.dataset.view !== 'webcam') { leaveOakView(); VIEWS[b.dataset.view](); camera.updateProjectionMatrix(); controls.update(); }
+  else VIEWS[b.dataset.view]();
   needsRender = true;
 });
 // dragging in the OAK view leaves it and orbits from where the camera is
@@ -681,14 +701,27 @@ function placeDetections(list) {
   log(`${list.length} cubes from the camera put on the mat`, 'ok');
 }
 const camTab = initCameraTab({
-  scene, initial: CAMERA.calib, hideForCamera, log, toast,
+  scene, cals: camCals, hideForCamera, log, toast,
+  armAngles: () => anglesFromCounts(ctl.commands),
+  onArmTrack: r => { trackedPose = r && $('cam-arm-ghost').checked ? r.angles : null; needsRender = true; },
   linkBase: () => (link ? link.base : ''),
-  onApply: cal => {
-    CAMERA.calib = cal;
-    try { localStorage.setItem(CAM_KEY, JSON.stringify({ R: cal.R, t: cal.t, f: cal.f, cx: cal.cx, cy: cal.cy, centre: cal.centre, rms: cal.rms, H: cal.H })); } catch { /* not saved */ }
+  onApply: (cal, id = 'oak') => {
+    camCals[id] = cal;
+    if (id === 'oak') CAMERA.calib = cal;
+    try { localStorage.setItem(CAM_KEY(id), JSON.stringify({ R: cal.R, t: cal.t, f: cal.f, cx: cal.cx, cy: cal.cy, centre: cal.centre, rms: cal.rms, H: cal.H })); } catch { /* not saved */ }
     placeMatAndCamera(); if (oakView) applyOakView(); needsRender = true;
   },
   useDetections: list => placeDetections(list),
+  // cubes located in 3D by two cameras (locate3d.js): placed at their stack level
+  useCubes3d: list => {
+    setScene(list.map(c => [c.colour, c.board[0], c.board[1], c.level, c.yaw || 0]))
+      .then(() => log(`${list.length} cubes from both cameras put ${serverMode() ? 'into the shared simulation' : 'on the mat'}, with their stack levels`, 'ok'))
+      .catch(e => toast(e.message));
+  },
+  trackCubes3d: (() => {
+    let last = 0;
+    return list => { if (Date.now() - last < 1500) return; last = Date.now(); setScene(list.filter(c => Math.abs(c.X[2] - (c.level * CUBE * 10 + CUBE * 5)) < 6).map(c => [c.colour, c.board[0], c.board[1], c.level, c.yaw || 0])).catch(() => {}); };
+  })(),
   // Live tracking: move the nearest sim cube of the same colour to each detection (within 6 cm,
   // and only if it moved more than 3 mm, so camera noise does not keep the physics awake);
   // add cubes the sim does not have yet. Cubes in the gripper are left alone.
@@ -725,6 +758,7 @@ $('demo-reset').onclick = () => scenarios.reset();
 
 // ---------------- main loop ----------------
 
+let trackedPose = null;
 let needsRender = true, last = performance.now(), lastContacts = new Set(), eventIdx = 0, lastCubeKey = '';
 controls.addEventListener('change', () => { needsRender = true; });
 $('show-shapes').onchange = () => { needsRender = true; };
@@ -768,7 +802,9 @@ function frame(now) {
     const a = anglesFromCounts(ctl.position);
     arm.setPose(a, world.gap);
     // The ghost shows the real arm only where it differs from the simulated one.
-    ghost.root.visible = false;   // the view shows the active backend's arm itself
+    // the ghost shows the arm as the cameras see it (Camera tab → Arm tracking)
+    ghost.root.visible = !!trackedPose;
+    if (trackedPose) ghost.setPose(trackedPose, world.gap);
     syncCubeMeshes();
     const hitNames = new Set(world.contacts.flatMap(k => [k.a, k.b]));
     updateShapes(armShapes(world.frames, world.gap), hitNames, $('show-shapes').checked);
@@ -796,4 +832,4 @@ resize();
 requestAnimationFrame(frame);
 
 // for the console and for tests
-window.sim = { ctl, world, scene, camera, controls, renderer, view, arm, camTab, get link() { return link; }, makePlan, THREE };
+window.sim = { ctl, world, scene, camera, controls, renderer, view, arm, camTab, get link() { return link; }, makePlan, THREE, hideForCamera, anglesFromCounts, camCals };

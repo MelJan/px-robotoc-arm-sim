@@ -41,6 +41,7 @@ It always starts on the simulation. Switching to the real arm is one call, or th
 | `POST /api/stop` | `{}` | Emergency stop, outputs off. Never blocked |
 | `POST /api/power_on` | `{}` | Outputs on: PARK, then HOME |
 | `POST /api/settings`, `/api/limits`, `/api/demo/...` | as on the controller | Same as on the controller |
+| `GET /api/camera/…`, `GET /api/camera2/…` | | The two cameras (OAK, webcam): `status`, `snapshot.jpg`, `stream.mjpg`, `capture`. Forwarded read only from the controller with `--camera <url>` (or `--controller`); without it the OAK gives a saved frame and camera2 has none |
 | `GET /api/backend` | | `{"target": "sim" \| "real", "real": "<url>", "allowMotion": …}` |
 | `POST /api/backend` | `{"target": "real"}` | Switch for everybody. No login |
 | `GET /sim/world`, `POST /sim/scene` | `{"cubes": [["orange", 0, 14, 0, 0], …]}` | The simulation's cubes ([colour, x, y, level, yaw], board frame cm). Not part of the robot API |

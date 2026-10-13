@@ -35,7 +35,8 @@ Opening `index.html` straight from disk does not work, because browsers block ES
 | Tasks | `blue on orange`, `grün auf blau`, `yellow to 0 14` (cm, board frame). The plan uses top-down IK, vertical approach and lift, and via points around stacks. Each plan is checked in a headless copy of the world before it can run |
 | Two playback modes | Demo playback: all joints together, like the controller's Run. Single-joint moves: what the HTTP API can send, with a joint order chosen to stay clear of obstacles |
 | Camera tab | The OAK camera's view rendered with its exact intrinsics, with the real frame on top. Calibration from the mat markers: homography, focal length, pose, then Levenberg-Marquardt. It reproduces `vision/blocks.py`'s OpenCV fit, 950 px and 0,9 px RMS. The result moves the camera in the model |
-| Cube recognition | Finds coloured cubes in the frame, back-projects them onto the mat and puts them into the sim, so the planner can go there. It assumes the cubes lie on the mat |
+| Cube recognition | Finds coloured cubes in every camera's frame. With two cameras each cube is located in 3D where the viewing rays meet (stacked or held cubes too); with one camera it is assumed to lie on the mat. Then it puts them into the sim, so the planner can go there |
+| Two cameras | OAK (`/api/camera/*`) and webcam (`/api/camera2/*`), each calibrated from the mat markers; arm tracking by the AprilTags 71 and 72 on the arm, shown as a ghost |
 | Live video and tracking | "Live video" shows the controller's MJPEG stream (read only). The stream closes when you switch source, hide the page, or after 10 minutes. "Track continuously" runs the trackers on the current frame every 0,2 to 2 s, and can move the sim cubes to what the camera sees. On the real camera: about 17 ms per frame in the browser at 5 fps. More trackers, such as a gripper ArUco marker for the HOME-angle calibration, plug in with `sim.camTab.addTracker(name, (image, camera, time) => result)` |
 | Real arm | Header switch "Simulation / Real arm"; one click takes control (needs a connection and a server with `--allow-motion`, or the mock). The simulated and the real arm get the same controller API calls (`js/armapi.js`; the simulated arm answers through the mock's backend code, `js/controller-api.js`): every command runs on the simulated arm first, then the identical calls go to the arm |
 | Scenarios | Predefined block layouts with the steps to execute (tasks the planner turns into trajectories, or a stored trajectory such as the team's taught demo), or the cubes the camera sees plus typed tasks. ↺ Reset puts cubes and arm in place; run in sim, then on the arm (`js/scenarios.js`) |
@@ -60,7 +61,9 @@ Opening `index.html` straight from disk does not work, because browsers block ES
 | `js/world.js` | Arm pose, grasp logic, physics stepping, collision report |
 | `js/planner.js` | Pick, place and stack plans, via points, headless verification, single-joint moves |
 | `js/calib.js` | Homography, focal length and pose, Levenberg-Marquardt |
-| `js/aruco.js` | ArUco marker detection for the mat markers (any camera position) |
+| `js/aruco.js` | Marker detection: the mat's ArUco markers and the AprilTags 36h11 on the arm (`js/apriltag36h11.js`) |
+| `js/armtrack.js` | Arm tracking with two cameras: tag triangulation, joint angles fitted to the tag views (`docs/two-camera-tracking.md`) |
+| `js/locate3d.js` | Cubes in 3D from two cameras: viewing rays intersected, visible-face correction, stack level |
 | `js/detect.js` | Colour segmentation and back-projection of cubes |
 | `js/model/` | three.js model, one file per part: `textures`, `materials`, `geometry` (helpers, merging), `parts` (servo, horn, brackets), `arm`, `gripper`, `cables`, `desk` (board, mat, Pi, power supply, OAK camera, cubes); `index.js` exports them |
 | `js/render.js` | Renderer, lights, environment |

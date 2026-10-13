@@ -83,6 +83,26 @@ export const CAMERA = {
   fPx: 952, w: 1280, h: 720,
 };
 
+// The two cameras that watch the mat (photos/setup-two-cameras-*.jpg). Poses are first guesses in the
+// camera table frame (mm); each camera is calibrated from the mat markers in its own frames, and that
+// calibration replaces the guess. Both come from the controller's API (GET only): the OAK at
+// /api/camera/*, the webcam at /api/camera2/* (status, snapshot.jpg, stream.mjpg, capture).
+export const CAMERAS = [
+  { id: 'oak', name: 'OAK on the stand', api: '/api/camera', w: 1280, h: 720, fPx: 952, posMm: [480.8, -8.3, 371.7], lookAtMm: [175, 0, 0] },
+  { id: 'webcam', name: 'Webcam on the monitor', api: '/api/camera2', w: 1280, h: 720, fPx: 900, posMm: [600, -320, 420], lookAtMm: [170, 0, 0] },
+];
+
+// AprilTags (36h11) stuck to the arm (photos/arm-tags-71-72-*.jpg), for tracking the real arm with the
+// cameras. Placed in a link frame of kinematics.js fk(): centre and the tag's outward normal and "up"
+// (the direction of its top edge as printed), cm. size = side of the black square. Measured from the
+// photos only (about 2 to 3 mm); the tracker reports how well they fit.
+export const ARM_TAGS = [
+  // on the S5 (wrist rotation) servo's label face, the face toward -Y of the wrist frame
+  { id: 72, link: 'wrist', centre: [0.7, -1.0, ARM.L4 - 2.2], normal: [0, -1, 0], up: [0, 0, -1], size: 2.2 },
+  // on the S6 (gripper) servo's face toward the wrist, beside the gripper plate
+  { id: 71, link: 'hand', centre: [1.9, -2.5, 0.38], normal: [0, 0, -1], up: [0, -1, 0], size: 2.2 },
+];
+
 // Motion planning defaults (docs/pick-and-place-plan.md, docs/tracking-plan.md).
 export const PLAN = {
   hover: 5.0,           // approach height above a cube on the mat

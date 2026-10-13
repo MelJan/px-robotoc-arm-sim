@@ -2,6 +2,24 @@
 
 Branch `feature/threejs-sim`. Newest first. Dates are when the change was committed.
 
+## 2026-10-13 (afternoon): Two cameras, arm tracking with AprilTags, cubes in 3D
+
+- **Second camera.** The webcam on the monitor is the controller's `/api/camera2/*` (status, snapshot.jpg, stream.mjpg, capture), next to the OAK's `/api/camera/*`. `server.mjs --camera <controller>` forwards both, GET only.
+- **Camera tab with both cameras.**
+  - A camera selector; each camera has its own frame source and its own calibration from the mat markers ("Calibrate all cameras").
+  - The 3D view shows both cameras and their fields of view, and a "Webcam" view button.
+- **Arm tracking.** AprilTags 36h11 are on the arm: 72 on the S5 servo, 71 on the S6 servo.
+  - They are detected in both cameras' frames and triangulated (rays from both views intersected).
+  - The joint angles are fitted to the tag views. The tracked pose shows as a ghost arm, with "tracked − commanded" per joint.
+  - Code: `js/armtrack.js`, codes in `js/apriltag36h11.js`.
+- **Cubes in 3D.** Cubes seen by two cameras are located where their viewing rays meet, corrected from the visible faces to the cube's centre.
+  - Stacked cubes and a cube in the gripper get their real height; they are no longer assumed to lie on the mat.
+  - "Put them into the sim" places them at their stack level. Code: `js/locate3d.js`.
+- **Model:** the tags on the arm with their real patterns, and the webcam on its monitor.
+- **Cube detector:** pale, brightly lit faces now join a cube's blob (hysteresis), so top faces count.
+- Details and checks: [`docs/two-camera-tracking.md`](docs/two-camera-tracking.md). 35 tests.
+- Not yet: real frames from both cameras; the tag positions are measured from photos only; the simulated backend serves no camera2 frames.
+
 ## 2026-10-13: One robot API for the simulated and the real arm
 
 **For other teams: you can now develop against the simulated arm with exactly the API of the real controller, and switch to the real arm without changing your code.**

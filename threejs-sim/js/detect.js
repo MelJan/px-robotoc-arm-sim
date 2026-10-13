@@ -2,7 +2,8 @@
 // Assumes the cubes lie on the mat (level 0), as at the start of a task.
 //
 // 1. Colour classes in HSV per pixel (orange, yellow, green, blue, red; the mat is white or
-//    grey and the markers black, so they drop out on saturation and brightness).
+//    grey and the markers black, so they drop out on saturation and brightness). Pale pixels of the
+//    same hue (a brightly lit face) are added to a blob where they touch it (hysteresis).
 // 2. Only pixels whose viewing ray hits the mat inside its printed area count.
 // 3. Connected components (4-neighbour) on a half-resolution mask.
 // 4. Each blob's pixels are back-projected onto the plane at half cube height; their mean is
@@ -14,13 +15,16 @@ import { CUBE } from './config.js';
 import { project } from './calib.js';
 
 const CUBE_MM = CUBE * 10;
+// test: a pixel that surely belongs to a cube (a blob starts there); hue: the same colour, looser, for
+// pale pixels (a brightly lit top face) that join a blob only where they touch it.
 export const COLOUR_RULES = [
-  { colour: 'red', test: (h, s, v) => (h < 10 || h > 345) && s > 0.5 && v > 0.3 },
-  { colour: 'orange', test: (h, s, v) => h >= 10 && h < 38 && s > 0.5 && v > 0.45 },
-  { colour: 'yellow', test: (h, s, v) => h >= 38 && h < 70 && s > 0.45 && v > 0.45 },
-  { colour: 'green', test: (h, s, v) => h >= 80 && h < 170 && s > 0.35 && v > 0.2 },
-  { colour: 'blue', test: (h, s, v) => h >= 190 && h < 255 && s > 0.4 && v > 0.2 },
+  { colour: 'red', test: (h, s, v) => (h < 10 || h > 345) && s > 0.5 && v > 0.3, hue: h => h < 12 || h > 340 },
+  { colour: 'orange', test: (h, s, v) => h >= 10 && h < 38 && s > 0.5 && v > 0.45, hue: h => h >= 8 && h < 40 },
+  { colour: 'yellow', test: (h, s, v) => h >= 38 && h < 70 && s > 0.45 && v > 0.45, hue: h => h >= 36 && h < 72 },
+  { colour: 'green', test: (h, s, v) => h >= 80 && h < 170 && s > 0.35 && v > 0.2, hue: h => h >= 78 && h < 172 },
+  { colour: 'blue', test: (h, s, v) => h >= 190 && h < 255 && s > 0.4 && v > 0.2, hue: h => h >= 186 && h < 258 },
 ];
+const WEAK_S = 0.14, WEAK_V = 0.3;
 
 function hsv(r, g, b) {
   const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
@@ -66,22 +70,23 @@ export function expectedArea(cal, X, Y, yaw = 0) {
 /**
  * Find cubes in an image. img: ImageData of the full 1280 x 720 frame (or any size; it is
  * scaled to the calibration's 1280 x 720 pixel grid). cal: camera from calib.js.
- * Returns [{ colour, X, Y (mm, table frame), yaw, pixels, areaRatio, ok, bbox }].
+ * Returns [{ colour, X, Y (mm, table frame, assuming level 0), yaw, pixels, areaRatio, ok, bbox, uv (blob centroid, px) }].
  */
 export function detectCubes(img, cal, { frameW = 1280, frameH = 720, step = 2, minPixels = 120 } = {}) {
   const { width, height, data } = img;
   const sx = frameW / width, sy = frameH / height;
   const gw = Math.floor(width / step), gh = Math.floor(height / step);
-  const label = new Int16Array(gw * gh).fill(-1);
+  const label = new Int16Array(gw * gh).fill(-1), weak = new Int16Array(gw * gh).fill(-1);
   // mat membership is cheap to test per sampled pixel via the plane at Z = 0
   for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
     const i = 4 * ((y * step) * width + x * step);
     const [h, s, v] = hsv(data[i], data[i + 1], data[i + 2]);
     const k = COLOUR_RULES.findIndex(r => r.test(h, s, v));
-    if (k < 0) continue;
+    const kw = k >= 0 ? k : s > WEAK_S && v > WEAK_V ? COLOUR_RULES.findIndex(r => r.hue(h)) : -1;
+    if (kw < 0) continue;
     const m = backProject(cal, x * step * sx, y * step * sy, 0);
     if (!m || m[0] < -5 || m[0] > 365 || Math.abs(m[1]) > 145) continue;
-    label[y * gw + x] = k;
+    if (k >= 0) label[y * gw + x] = k; else weak[y * gw + x] = kw;
   }
   const seen = new Uint8Array(gw * gh), blobs = [];
   for (let start = 0; start < gw * gh; start++) {
@@ -92,18 +97,19 @@ export function detectCubes(img, cal, { frameW = 1280, frameH = 720, step = 2, m
       const p = stack.pop(); px.push(p);
       const x = p % gw, y = (p / gw) | 0;
       for (const q of [x > 0 ? p - 1 : -1, x < gw - 1 ? p + 1 : -1, y > 0 ? p - gw : -1, y < gh - 1 ? p + gw : -1])
-        if (q >= 0 && !seen[q] && label[q] === k) { seen[q] = 1; stack.push(q); }
+        if (q >= 0 && !seen[q] && (label[q] === k || weak[q] === k)) { seen[q] = 1; stack.push(q); }   // pale pixels join, never start
     }
     if (px.length * step * step < minPixels) continue;
     blobs.push({ k, px });
   }
   const out = [];
   for (const { k, px } of blobs) {
-    let sumX = 0, sumY = 0, n = 0, minU = Infinity, minV = Infinity, maxU = 0, maxV = 0;
+    let sumX = 0, sumY = 0, n = 0, minU = Infinity, minV = Infinity, maxU = 0, maxV = 0, sumU = 0, sumV = 0;
     const pts = [];
     for (const p of px) {
       const u = (p % gw) * step * sx, v = ((p / gw) | 0) * step * sy;
       minU = Math.min(minU, u); maxU = Math.max(maxU, u); minV = Math.min(minV, v); maxV = Math.max(maxV, v);
+      sumU += u; sumV += v;
       const m = backProject(cal, u, v, CUBE_MM / 2);
       if (!m) continue;
       pts.push(m); sumX += m[0]; sumY += m[1]; n++;
@@ -117,7 +123,9 @@ export function detectCubes(img, cal, { frameW = 1280, frameH = 720, step = 2, m
     yaw = ((yaw + 45) % 90 + 90) % 90 - 45;
     const pixels = px.length * step * step * sx * sy;
     const areaRatio = pixels / expectedArea(cal, X, Y, yaw);
-    out.push({ colour: COLOUR_RULES[k].colour, X, Y, yaw, pixels: Math.round(pixels), areaRatio, ok: areaRatio > 0.55 && areaRatio < 1.6, bbox: [minU, minV, maxU, maxV] });
+    // uv: the blob's centroid in the image (1280 x 720 grid), for locating the cube in 3D from two cameras (locate3d.js)
+    const uv = [sumU / px.length + step * sx / 2, sumV / px.length + step * sy / 2];
+    out.push({ colour: COLOUR_RULES[k].colour, X, Y, yaw, pixels: Math.round(pixels), areaRatio, ok: areaRatio > 0.55 && areaRatio < 1.6, bbox: [minU, minV, maxU, maxV], uv });
   }
   // largest blob per colour first; drop tiny fragments next to a bigger blob of the same colour
   out.sort((a, b) => b.pixels - a.pixels);
