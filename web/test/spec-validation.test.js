@@ -17,10 +17,17 @@ test('schema rejects reference poses outside historical bounds', () => {
   assert.throws(() => validateArmSpec(spec), /reference counts must be inside/);
 });
 
+test('schema reserves a measured millimetre configuration for gripper marker tracking', () => {
+  const spec = structuredClone(loadSpec());
+  assert.deepEqual(spec.tracking.gripperMarker.markerToTcpMm, [0, 0, 0]);
+  spec.tracking.gripperMarker.id = 5;
+  assert.throws(() => validateArmSpec(spec), /reserved DICT_4X4_50 marker id 6/);
+});
+
 test('reference planning is deterministic for a fixed specification seed', () => {
   const spec = loadSpec(); const home = referencePose(spec, 'home');
-  const first = planReferenceTransition(spec, home, 'park');
-  const second = planReferenceTransition(spec, home, 'park');
+  const first = planReferenceTransition(spec, home, 'park', { ignoreCubes: true });
+  const second = planReferenceTransition(spec, home, 'park', { ignoreCubes: true });
   assert.equal(first.success, true);
   assert.deepEqual(first.path, second.path);
   assert.equal(pathCost(spec, first.path), pathCost(spec, second.path));

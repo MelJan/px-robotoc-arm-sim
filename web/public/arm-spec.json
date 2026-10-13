@@ -71,6 +71,17 @@
     ],
     "dropZones": { "red": [92,155,13.25], "orange": [92,195,13.25], "blue": [92,235,13.25], "green": [92,275,13.25] }
   },
+  "tracking": {
+    "gripperMarker": {
+      "dictionary": "DICT_4X4_50",
+      "id": 6,
+      "sizeMm": 30,
+      "markerToTcpMm": [0, 0, 0],
+      "status": "unattached-and-offset-unmeasured",
+      "coordinateConvention": "+X right, +Y to printed top, +Z out of printed face",
+      "provenance": "Selected simulator tracking marker. Verify printed size and measure the rigid marker-to-TCP offset after attachment."
+    }
+  },
   "operational": {
     "defaultMode": "simulation",
     "sameOriginApiBase": "/api",
@@ -83,7 +94,7 @@
     "measuredDimensions": ["dimensions.board", "dimensions.shoulderHeight", "dimensions.upperArm", "dimensions.forearm", "dimensions.wrist", "dimensions.gripperOpenLength", "dimensions.gripperClosedLength", "dimensions.gripperOpenGap", "dimensions.gripperClosedGap", "dimensions.testCube"],
     "observedCommissioningPoses": ["joints.*.home", "joints.*.park"],
     "historicalUnvalidatedBounds": ["joints.*.min", "joints.*.max"],
-    "provisionalAssumptions": ["fixture", "visualReferences", "gripper", "collision.linkRadii", "joints.*.calibrationAnchors"],
+    "provisionalAssumptions": ["fixture", "visualReferences", "gripper", "collision.linkRadii", "joints.*.calibrationAnchors", "tracking.gripperMarker"],
     "validatedSafeLimits": []
   }
 }

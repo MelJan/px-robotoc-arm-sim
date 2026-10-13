@@ -11,10 +11,13 @@ import { cubeTilt } from './physics.js';
 import { planTransfer, verify, toMoves, parseCommand } from './planner.js';
 import { makeMaterials, buildArm, buildTable, buildCamera, buildCube } from './model/index.js';
 import { initCameraTab, defaultCalibration, applyPinhole, tableToBoard } from './camview.js';
+import { calibrate, MARKER_CORNERS } from './calib.js';
+import { detectMarkers } from './aruco.js';
 import { initDemo } from './demo.js';
+import { contactNeedsArmStop } from './contact-policy.js';
 import { loadCanonicalSpec, applyCanonicalServoMetadata, countsArray, countsObject, runtimeSpec } from './advanced.js';
 import { verifyPath as verifyCanonicalPath } from '../src/core/collision.js';
-import { controllerCompatiblePath, pathCost, planReferenceTransition, planTextTask } from '../src/core/planning.js';
+import { controllerCompatiblePath, optimizeJointPath, pathCost, planReferenceTransition, planTextTask } from '../src/core/planning.js';
 import { RobotArmClient } from '../src/operational/client.js';
 
 const $ = id => document.getElementById(id);
@@ -52,6 +55,7 @@ const { renderer, scene, camera, controls } = view;
 let needsRender = true;
 let s5VisualOffset = REFERENCE_S5_VISUAL.HOME;
 let s5OffsetMotion = null;
+let pendingVisualS5Offset = null;
 
 function moveVisualS5Offset(target, durationSeconds = 0.8) {
   s5OffsetMotion = { start: s5VisualOffset, target, elapsed: 0, duration: Math.max(0.01, durationSeconds) };
@@ -67,9 +71,9 @@ function updateVisualS5Offset(dt) {
   return true;
 }
 
-function visualModelCounts(counts) {
+function visualModelCounts(counts, wristOffset = s5VisualOffset) {
   const visual = counts.slice();
-  visual[4] += s5VisualOffset * SERVOS[4].cpd / SERVOS[4].dir;
+  visual[4] += wristOffset * SERVOS[4].cpd / SERVOS[4].dir;
   return visual;
 }
 camera.position.set(-30, 50, 30);
@@ -252,8 +256,13 @@ function toast(text, ms = 4000) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, ms);
 }
 ctl.on((kind, detail) => {
-  if (kind === 'stop') log(`STOP: ${detail}`, 'err');
+  if (kind === 'stop') { pendingVisualS5Offset = null; log(`STOP: ${detail}`, 'err'); }
   else if (kind === 'power') log(`power ${detail}`);
+  else if (kind === 'idle' && pendingVisualS5Offset) {
+    const pending = pendingVisualS5Offset;
+    pendingVisualS5Offset = null;
+    moveVisualS5Offset(pending.target, pending.duration);
+  }
   needsRender = true;
 });
 
@@ -264,9 +273,15 @@ const currentRuntimeSpec = () => runtimeSpec(SERVOS, world.cubes);
 let rapierWorld = null;
 let rapierGeneration = 0;
 let rapierHeld = null;
+let latestRapierContacts = [];
 
 async function rebuildRapier() {
   const generation = ++rapierGeneration;
+  // Do not let the previous physics world write stale cube transforms back into
+  // a freshly reset/edited scene while the replacement world initializes.
+  rapierWorld = null;
+  rapierHeld = null;
+  latestRapierContacts = [];
   try {
     const { PhysicsWorld } = await import('../src/core/physics.js');
     const physics = await new PhysicsWorld(currentRuntimeSpec()).initialize(countsObject(ctl.position));
@@ -302,8 +317,8 @@ function syncRapierCubes() {
   }
 }
 
-function stepRapier(counts) {
-  if (!rapierWorld?.ready) return;
+function stepRapier(counts, dt) {
+  if (!rapierWorld?.ready) return [];
   const held = world.holding?.id ?? null;
   if (held !== rapierHeld) {
     if (rapierHeld) rapierWorld.releaseCube();
@@ -311,8 +326,10 @@ function stepRapier(counts) {
     rapierHeld = held;
   }
   rapierWorld.setRobotPose(countsObject(counts));
-  rapierWorld.step();
+  rapierWorld.step(dt);
   syncRapierCubes();
+  latestRapierContacts = rapierWorld.robotCubeContacts();
+  return latestRapierContacts;
 }
 
 // ---------------- joints panel ----------------
@@ -386,21 +403,45 @@ async function command(kind, ch, value) {
   } catch (e) { toast(e.message); log(e.message, 'err'); }
 }
 
+function straightUpPose(planning) {
+  const raw = countsFromAngles({ s1: 0, s2: 0, s3: 0, s4: 0, s5: 0 }, planning.gripper.openTick);
+  return Object.fromEntries(planning.joints.map((joint, index) => [
+    joint.id,
+    Math.round(THREE.MathUtils.clamp(raw[index], joint.min, joint.max)),
+  ]));
+}
+
 const poseCmd = name => async () => {
   try {
     const planning = currentRuntimeSpec();
-    const planned = planReferenceTransition(planning, countsObject(ctl.commands), name.toLowerCase());
+    if (name === 'STRAIGHT UP' && robotClient.mode !== 'simulation') {
+      throw new Error('STRAIGHT UP is a provisional modelling pose and is available only in simulation');
+    }
+    const planned = name === 'STRAIGHT UP'
+      ? optimizeJointPath(planning, countsObject(ctl.commands), straightUpPose(planning), { ignoreCubes: false })
+      : planReferenceTransition(planning, countsObject(ctl.commands), name.toLowerCase());
     if (!planned.success) throw new Error(`${name} transition rejected: ${planned.reason}`);
     const targetOffset = REFERENCE_S5_VISUAL[name] ?? 0;
-    moveVisualS5Offset(targetOffset, Math.max(0.5, planned.metrics.duration));
+    const visualDuration = Math.max(0.5, planned.metrics.duration);
     if (robotClient.mode === 'operational-armed') {
       const sequential = controllerCompatiblePath(planning, planned.path);
       if (!sequential.success) throw new Error(sequential.reason);
       await robotClient.executeSingleJointPath(planning, sequential.path);
       ctl.setCommands(countsArray(sequential.path.at(-1)));
+      moveVisualS5Offset(targetOffset, visualDuration);
     } else if (robotClient.mode === 'simulation') {
       const poses = planned.path.slice(1).map((pose) => countsArray(pose));
       ctl.runPoses(poses, ctl.speed, poses.map((_pose, index) => `${name} verified ${index + 1}/${poses.length}`));
+      // Keep the photo-reference wrist orientation out of the spatial move: it
+      // is not represented by a separate hardware command, so rotating it while
+      // the planned path runs can sweep visibly through a cube. Apply it only
+      // after the verified controller path has settled.
+      pendingVisualS5Offset = { target: targetOffset, duration: Math.min(0.8, visualDuration) };
+      if (!ctl.busy) {
+        const pending = pendingVisualS5Offset;
+        pendingVisualS5Offset = null;
+        moveVisualS5Offset(pending.target, pending.duration);
+      }
     } else {
       throw new Error('Pose motion is disabled in read-only or disarmed mode');
     }
@@ -409,6 +450,7 @@ const poseCmd = name => async () => {
 };
 $('go-home').onclick = poseCmd('HOME');
 $('go-park').onclick = poseCmd('PARK');
+$('go-straight').onclick = poseCmd('STRAIGHT UP');
 $('power-on').onclick = () => {
   if (robotClient.mode !== 'simulation') { toast('Use the guarded operational controls in Tools for the physical robot'); return; }
   ctl.rearm(); lastContacts = new Set(world.contacts.map(k => `${k.a} × ${k.b}`));
@@ -512,6 +554,17 @@ function makePlan() {
   }
 }
 $('plan-btn').onclick = makePlan;
+$('task-preset').onchange = () => {
+  const command = $('task-preset').value;
+  if (!command) return;
+  $('cmd').value = command;
+  current = null;
+  $('run-sim').disabled = $('export-plan').disabled = true;
+  $('plan-out').innerHTML = '<span class="note">Task selected. Choose Plan to calculate and verify it before playback.</span>';
+};
+$('cmd').addEventListener('input', () => {
+  if ($('cmd').value !== $('task-preset').value) $('task-preset').value = '';
+});
 $('cmd').addEventListener('keydown', e => { if (e.key === 'Enter') makePlan(); });
 $('exec-mode').onchange = () => { if (current) makePlan(); };
 
@@ -529,6 +582,9 @@ $('run-sim').onclick = async () => {
     } else if (robotClient.mode === 'simulation') {
       if (current.mode === 'moves') ctl.runMoves(current.moves, current.moves.map(m => m.label));
       else ctl.runPoses(current.plan.steps.map(s => s.counts), current.speed, current.plan.steps.map(s => s.label));
+      if (current.plan.steps.at(-1)?.label === 'HOME') {
+        pendingVisualS5Offset = { target: REFERENCE_S5_VISUAL.HOME, duration: 0.8 };
+      }
     } else {
       throw new Error('Playback is disabled in read-only or disarmed mode');
     }
@@ -715,8 +771,26 @@ document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => {
   $('tab-camera').hidden = b.dataset.tab !== 'camera';
   if (b.dataset.tab === 'camera') { camTab.activate(); camTab.update(); }
 });
+function tcpForCounts(counts, wristOffset = s5VisualOffset) {
+  return fk(anglesFromCounts(visualModelCounts(counts, wristOffset))).grasp.map(value => value * 10);
+}
+function tcpComparison() {
+  const simulatedBoardMm = world.frames?.grasp?.map(value => value * 10) ?? tcpForCounts(ctl.position);
+  const motion = ctl.motion ?? ctl.queue[0] ?? null;
+  const plannedCounts = ctl.position.slice();
+  if (motion) for (const channel of motion.channels) plannedCounts[channel] = motion.target[channel];
+  return {
+    simulatedBoardMm,
+    plannedBoardMm: tcpForCounts(plannedCounts, s5OffsetMotion?.target ?? s5VisualOffset),
+    plannedLabel: motion?.label ?? 'current pose',
+  };
+}
+let latestGripperObservation = null;
 const camTab = initCameraTab({
   scene, initial: CAMERA.calib, hideForCamera, log, toast,
+  gripperMarker: canonicalSpec.tracking.gripperMarker,
+  tcpComparison,
+  onGripperObservation: observation => { latestGripperObservation = observation; },
   onApply: cal => {
     CAMERA.calib = cal;
     try { localStorage.setItem(CAM_KEY, JSON.stringify({ R: cal.R, t: cal.t, f: cal.f, cx: cal.cx, cy: cal.cy, centre: cal.centre, rms: cal.rms, H: cal.H })); } catch { /* not saved */ }
@@ -764,15 +838,11 @@ controls.addEventListener('change', () => { needsRender = true; });
 $('show-shapes').onchange = () => { needsRender = true; };
 $('show-path').onchange = () => { pathLine.visible = pathDots.visible = $('show-path').checked; needsRender = true; };
 
-function contactNeedsArmStop(key) {
-  if (/^.+ cube × (board|desk)$/i.test(key) || /^.+ cube × .+ cube$/i.test(key)) return false;
-  const match = key.match(/^(left|right) pad × (.+) cube$/i);
-  if (!match) return true;
-  const plannedPick = current?.plan?.info?.pick;
-  const plannedPhase = ctl.motion?.label ?? '';
-  return !(match[2] === plannedPick
-    && (/^(Descend|Grip|Lift)/i.test(plannedPhase) || world.holding?.id === match[2]));
-}
+const shouldStopForContact = key => contactNeedsArmStop(key, {
+  plannedPick: current?.plan?.info?.pick,
+  plannedPhase: ctl.motion?.label ?? '',
+  holdingId: world.holding?.id,
+});
 
 world.step(0, visualModelCounts(ctl.position));
 renderCubes();
@@ -789,11 +859,15 @@ function frame(now) {
     for (let i = 0; i < n; i++) {
       ctl.update(dt / n);
       world.step(rapierWorld?.ready ? 0 : dt / n, visualModelCounts(ctl.position));
-      stepRapier(ctl.position);
+      const rapierContacts = stepRapier(ctl.position, dt / n);
       // Stop on a new contact, like the real arm should be stopped.
-      const keys = new Set(world.contacts.map(k => `${k.a} × ${k.b}`));
-      // Cubes are physical now: the arm may push them (logged). Stop only for the arm hitting itself or the board.
-      const fresh = [...keys].filter(k => !lastContacts.has(k) && contactNeedsArmStop(k));
+      const keys = new Set([
+        ...world.contacts.map(k => `${k.a} × ${k.b}`),
+        ...rapierContacts.map(k => `${k.a} × ${k.b}`),
+      ]);
+      // Planned jaw contact is allowed; every other fresh robot/cube contact
+      // obeys the user's Stop on collision switch.
+      const fresh = [...keys].filter(k => !lastContacts.has(k) && shouldStopForContact(k));
       lastContacts = keys;
       if (fresh.length && ctl.busy && $('stop-on-contact').checked) { ctl.stop(`collision: ${fresh.join(', ')}`); toast(`Collision: ${fresh.join(', ')} — stopped`); break; }
     }
@@ -809,11 +883,15 @@ function frame(now) {
     const a = anglesFromCounts(visualModelCounts(ctl.position));
     arm.setPose(a, world.gap);
     syncCubeMeshes();
-    const unsafeContacts = world.contacts.filter((contact) => contactNeedsArmStop(`${contact.a} × ${contact.b}`));
+    const combinedContacts = [...world.contacts, ...latestRapierContacts]
+      .filter((contact, index, contacts) => contacts.findIndex((other) => other.a === contact.a && other.b === contact.b) === index);
+    const unsafeContacts = combinedContacts.filter((contact) => shouldStopForContact(`${contact.a} × ${contact.b}`));
     const hitNames = new Set(unsafeContacts.flatMap(k => [k.a, k.b]));
     updateShapes(armShapes(world.frames, world.gap), hitNames, $('show-shapes').checked);
     $('contacts').hidden = !unsafeContacts.length;
-    $('contacts').textContent = unsafeContacts.map(k => `${k.a} × ${k.b} ${fmt(-k.sep * 10, 1)} mm`).join(' · ');
+    $('contacts').textContent = unsafeContacts.map(k => k.sep === undefined
+      ? `${k.a} × ${k.b} (Rapier contact)`
+      : `${k.a} × ${k.b} ${fmt(-k.sep * 10, 1)} mm`).join(' · ');
     updateJointPanel(ctl.position);
     const f = world.frames, t = toolYawAndTilt(f.hand);
     $('pose-readout').textContent = `Cube-centre point x ${fmt(f.grasp[0])} · y ${fmt(f.grasp[1])} · z ${fmt(f.grasp[2])} cm · tool ${fmt(t.tilt, 0)}° off vertical`;
@@ -839,5 +917,8 @@ requestAnimationFrame(frame);
 window.sim = {
   ctl, world, scene, camera, controls, renderer, view, arm, camTab, makePlan, THREE,
   canonicalSpec, currentRuntimeSpec, robotClient,
+  photoReference: { calibrate, detectMarkers, markerCorners: MARKER_CORNERS, tableToBoard },
+  tcpComparison,
+  get latestGripperObservation() { return latestGripperObservation ? structuredClone(latestGripperObservation) : null; },
   get rapierWorld() { return rapierWorld; },
 };

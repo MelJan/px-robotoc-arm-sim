@@ -8,6 +8,7 @@ import { CAMERA, MAT } from './config.js';
 import { calibrate, project, MARKER_CORNERS, SAVED_FRAME_CORNERS, markerCentre } from './calib.js';
 import { detectCubes } from './detect.js';
 import { detectMarkers } from './aruco.js';
+import { DEFAULT_GRIPPER_MARKER, GRIPPER_MARKER_ID, distance3, estimateGripperMarkerPose } from './gripper-tracker.js';
 
 const W = CAMERA.w, H = CAMERA.h;
 const COLOR_CSS = { orange: '#e8792b', blue: '#2f6fd6', yellow: '#d9a800', green: '#2f9b47', red: '#d23b3b' };
@@ -16,6 +17,8 @@ const deg = r => r * 180 / Math.PI;
 
 /** Table frame (mm) -> board frame (cm). */
 export function tableToBoard([X, Y, Z], d = MAT.sToEdge) { return [-Y / 10, X / 10 + d, Z / 10]; }
+export function tableToBoardMm([X, Y, Z], d = MAT.sToEdge) { return [-Y, X + d * 10, Z]; }
+export function boardToTableMm([x, y, z], d = MAT.sToEdge) { return [y - d * 10, -x, z]; }
 const tableDirToBoard = v => [-v[1], v[0], v[2]];
 
 /** Place a three.js camera at a calibrated pinhole camera (R, t in table mm) with its exact intrinsics. */
@@ -73,17 +76,37 @@ export function initCameraTab(ctx) {
   const visible = () => !$('tab-camera').hidden;
 
   // ---- local frame sources
-  //   saved  the frame from 2026-10-12 in the repo
-  //   file   an image from disk
+  //   saved      the frame from 2026-10-12 in the repo
+  //   file       an image from disk
+  //   connected  an explicitly requested snapshot through the read-only gateway
   const setPhoto = url => { photo.src = url; };
+  let connectedFrameLoading = null;
+  function refreshConnectedFrame() {
+    if (connectedFrameLoading) return connectedFrameLoading;
+    $('cam-status').textContent = 'Requesting one read-only camera snapshot…';
+    connectedFrameLoading = new Promise((resolve, reject) => {
+      const loaded = () => { cleanup(); $('cam-status').textContent = 'Connected camera snapshot loaded. No motion command was sent.'; resolve(); };
+      const failed = () => { cleanup(); reject(new Error('Camera snapshot unavailable. Start the guarded gateway with --controller and verify the controller camera.')); };
+      const cleanup = () => { photo.removeEventListener('load', loaded); photo.removeEventListener('error', failed); connectedFrameLoading = null; };
+      photo.addEventListener('load', loaded, { once: true });
+      photo.addEventListener('error', failed, { once: true });
+      setPhoto(`/api/camera/snapshot.jpg?time=${Date.now()}`);
+    });
+    return connectedFrameLoading;
+  }
   const loadSource = () => {
     source = $('cam-source').value;
-    if (source === 'saved') { setPhoto('ref/camera-2026-10-12.jpg'); points = savedPairs(); }
-    else if (source === 'file') { points = []; $('cam-file').click(); }
+    $('cam-refresh').hidden = source !== 'connected';
+    $('cam-refresh').disabled = source !== 'connected';
+    if (source === 'saved') { setPhoto('/reference-photos/controller-camera-2026-10-12.jpg'); points = savedPairs(); $('cam-status').textContent = 'Repository reference frame.'; }
+    else if (source === 'file') { points = []; $('cam-status').textContent = 'Choose a local image; it stays in this browser.'; $('cam-file').click(); }
+    else if (source === 'connected') { points = []; refreshConnectedFrame().catch(error => ctx.toast(error.message)); }
+    if (trackTimer) { clearInterval(trackTimer); trackTimer = setInterval(trackOnce, trackPeriod()); }
     draw();
   };
   $('cam-source').onchange = loadSource;
   $('cam-file').onchange = e => { const f = e.target.files[0]; if (f) setPhoto(URL.createObjectURL(f)); };
+  $('cam-refresh').onclick = () => refreshConnectedFrame().catch(error => ctx.toast(error.message));
   photo.onerror = () => ctx.toast('The selected reference image could not be loaded');
   // A new reference frame: find markers and refit the camera right away.
   photo.onload = () => {
@@ -142,27 +165,35 @@ export function initCameraTab(ctx) {
   }
 
   // ---- trackers: functions run on every grabbed frame while tracking is on.
-  // Built in: the cube detector. Future trackers (e.g. an ArUco marker on the gripper for the
-  // HOME-angle calibration) register with addTracker(name, (image, camera, time) => result).
   const trackers = new Map();
   const addTracker = (name, fn) => { trackers.set(name, fn); };
-  let trackTimer = null, trackFrames = 0, trackMs = 0;
+  let trackTimer = null, trackFrames = 0, trackMs = 0, trackBusy = false;
   function stopTracking() { clearInterval(trackTimer); trackTimer = null; if ($('cam-track')) $('cam-track').checked = false; }
-  function trackOnce() {
-    const img = grabFrame();
-    if (!img) return;
-    const t0 = performance.now();
-    const results = {};
-    for (const [name, fn] of trackers) { try { results[name] = fn(img, cal, Date.now()); } catch (e) { results[name] = { error: e.message }; } }
-    trackMs = performance.now() - t0; trackFrames++;
-    $('cam-track-stats').textContent = `tracking: ${trackFrames} frames, ${trackMs.toFixed(0)} ms per frame`;
+  async function trackOnce() {
+    if (trackBusy) return;
+    trackBusy = true;
+    try {
+      if (source === 'connected') await refreshConnectedFrame();
+      const img = grabFrame();
+      if (!img) return;
+      const t0 = performance.now();
+      const results = {};
+      for (const [name, fn] of trackers) { try { results[name] = fn(img, cal, Date.now()); } catch (e) { results[name] = { error: e.message }; } }
+      trackMs = performance.now() - t0; trackFrames++;
+      $('cam-track-stats').textContent = `tracking: ${trackFrames} frames, ${trackMs.toFixed(0)} ms processing${source === 'connected' ? ' · connected snapshots limited to ≥1 s' : ''}`;
+    } catch (error) {
+      $('cam-track-stats').textContent = `tracking stopped: ${error.message}`;
+      stopTracking();
+    } finally { trackBusy = false; }
   }
+  const trackPeriod = () => source === 'connected' ? Math.max(1000, Number($('cam-track-rate').value)) : Number($('cam-track-rate').value);
   $('cam-track').onchange = () => {
     if (!$('cam-track').checked) return stopTracking();
     trackFrames = 0;
-    trackTimer = setInterval(trackOnce, Number($('cam-track-rate').value));
+    void trackOnce();
+    trackTimer = setInterval(trackOnce, trackPeriod());
   };
-  $('cam-track-rate').onchange = () => { if (trackTimer) { clearInterval(trackTimer); trackTimer = setInterval(trackOnce, Number($('cam-track-rate').value)); } };
+  $('cam-track-rate').onchange = () => { if (trackTimer) { clearInterval(trackTimer); trackTimer = setInterval(trackOnce, trackPeriod()); } };
 
   // ---- automatic calibration from the ArUco markers in the current frame
   let markerQuads = {};
@@ -174,7 +205,7 @@ export function initCameraTab(ctx) {
     const ms = performance.now() - t0;
     const sx = W / img.width, sy = H / img.height;                      // calibration uses the 1280 x 720 grid
     markerQuads = Object.fromEntries(Object.entries(markers).map(([id, q]) => [id, q.map(([x, y]) => [x * sx, y * sy])]));
-    const ids = Object.keys(markerQuads).map(Number);
+    const ids = Object.keys(markerQuads).map(Number).filter(id => MARKER_CORNERS[id]);
     if (ids.length < 2) {
       if (!quiet) ctx.toast(`Only ${ids.length} marker(s) found; at least 2 are needed (4 or more spread over the mat are better)`);
       $('cam-pick-hint').textContent = `Markers found: ${ids.join(', ') || 'none'} (${ms.toFixed(0)} ms). Too few to calibrate.`;
@@ -200,6 +231,72 @@ export function initCameraTab(ctx) {
     lastKeep = Date.now();
     return autoCalibrate({ quiet: true });
   });
+
+  // ---- rigid gripper marker -> observed physical TCP
+  const markerDefaults = { ...DEFAULT_GRIPPER_MARKER, ...(ctx.gripperMarker ?? {}) };
+  const markerInputs = [$('gripper-offset-x'), $('gripper-offset-y'), $('gripper-offset-z')];
+  const markerKey = 'pxsim.gripper-marker.v1';
+  let savedMarker = null;
+  try { savedMarker = JSON.parse(localStorage.getItem(markerKey)); } catch { /* use specification defaults */ }
+  $('gripper-marker-size').value = savedMarker?.sizeMm ?? markerDefaults.sizeMm;
+  markerInputs.forEach((input, index) => { input.value = savedMarker?.markerToTcpMm?.[index] ?? markerDefaults.markerToTcpMm[index]; });
+  const markerConfig = () => ({
+    sizeMm: Number($('gripper-marker-size').value),
+    markerToTcpMm: markerInputs.map(input => Number(input.value)),
+  });
+  const saveMarkerConfig = () => {
+    try { localStorage.setItem(markerKey, JSON.stringify(markerConfig())); } catch { /* browser storage is optional */ }
+  };
+  [$('gripper-marker-size'), ...markerInputs].forEach(input => { input.onchange = saveMarkerConfig; });
+
+  let gripperObservation = null;
+  const formatMm = point => point.map(value => value.toFixed(1)).join(' / ');
+  function showGripperObservation(message = null) {
+    if (!gripperObservation) {
+      $('gripper-track-result').innerHTML = message ?? `Marker ID ${GRIPPER_MARKER_ID} has not been observed.`;
+      return;
+    }
+    const observation = gripperObservation;
+    const comparison = observation.comparison;
+    const rows = [
+      `<div><b>Observed physical TCP</b> x/y/z ${formatMm(observation.tcpBoardMm)} mm</div>`,
+      `<div>Marker centre, board x/y/z ${formatMm(observation.markerBoardMm)} mm · reprojection ${observation.reprojectionRmsPx.toFixed(2)} px RMS</div>`,
+    ];
+    if (comparison?.simulatedBoardMm) rows.push(`<div><b>Simulated TCP</b> ${formatMm(comparison.simulatedBoardMm)} mm · observed error ${distance3(observation.tcpBoardMm, comparison.simulatedBoardMm).toFixed(1)} mm</div>`);
+    if (comparison?.plannedBoardMm) rows.push(`<div><b>Planned TCP${comparison.plannedLabel ? ` (${comparison.plannedLabel})` : ''}</b> ${formatMm(comparison.plannedBoardMm)} mm · observed error ${distance3(observation.tcpBoardMm, comparison.plannedBoardMm).toFixed(1)} mm</div>`);
+    if (observation.markerToTcpMm.every(value => value === 0)) rows.push('<div class="warn">Marker-to-TCP offset is still zero: this is the marker centre, not a calibrated physical TCP.</div>');
+    $('gripper-track-result').innerHTML = rows.join('');
+  }
+
+  function detectGripperMarker(img, cameraCalibration, timestamp = Date.now()) {
+    const { markers } = detectMarkers(img);
+    const sx = W / img.width, sy = H / img.height;
+    markerQuads = Object.fromEntries(Object.entries(markers).map(([id, quad]) => [id, quad.map(([x, y]) => [x * sx, y * sy])]));
+    const corners = markerQuads[GRIPPER_MARKER_ID];
+    if (!corners) {
+      gripperObservation = null;
+      showGripperObservation(`Marker ID ${GRIPPER_MARKER_ID} not found. Keep the complete black border visible and avoid glare.`);
+      draw();
+      return null;
+    }
+    const pose = estimateGripperMarkerPose(cameraCalibration, corners, { ...markerConfig(), timestamp });
+    gripperObservation = {
+      ...pose,
+      markerBoardMm: tableToBoardMm(pose.markerTableMm),
+      tcpBoardMm: tableToBoardMm(pose.tcpTableMm),
+      comparison: ctx.tcpComparison?.() ?? null,
+    };
+    showGripperObservation();
+    ctx.onGripperObservation?.(structuredClone(gripperObservation));
+    draw();
+    return gripperObservation;
+  }
+  addTracker('gripper', detectGripperMarker);
+  $('gripper-detect').onclick = () => {
+    const img = grabFrame();
+    if (!img) { ctx.toast(photo.naturalWidth ? 'This frame cannot be read (cross-origin)' : 'No frame loaded'); return; }
+    try { detectGripperMarker(img, cal); } catch (error) { gripperObservation = null; showGripperObservation(error.message); ctx.toast(error.message); }
+  };
 
   // ---- cube recognition (read only: works on the frame shown above)
   let detections = [];
@@ -262,8 +359,9 @@ export function initCameraTab(ctx) {
     }
     // markers as detected in the frame (green), with their first corner marked
     for (const [id, q] of Object.entries(markerQuads)) {
-      g.strokeStyle = '#19d36b'; g.lineWidth = 2.5; g.beginPath(); q.forEach((p, i) => (i ? g.lineTo(...p) : g.moveTo(...p))); g.closePath(); g.stroke();
-      g.fillStyle = '#19d36b'; g.beginPath(); g.arc(...q[0], 4, 0, 2 * Math.PI); g.fill();
+      const colour = Number(id) === GRIPPER_MARKER_ID ? '#ee66ff' : '#19d36b';
+      g.strokeStyle = colour; g.lineWidth = Number(id) === GRIPPER_MARKER_ID ? 4 : 2.5; g.beginPath(); q.forEach((p, i) => (i ? g.lineTo(...p) : g.moveTo(...p))); g.closePath(); g.stroke();
+      g.fillStyle = colour; g.beginPath(); g.arc(...q[0], 4, 0, 2 * Math.PI); g.fill();
       g.font = 'bold 16px system-ui'; g.fillText(`found ${id}`, q[2][0] + 6, q[2][1] + 16);
     }
     for (const d of detections) {
@@ -272,6 +370,19 @@ export function initCameraTab(ctx) {
       const p = project(cal, [d.X, d.Y, 0]);
       g.fillStyle = '#fff'; g.beginPath(); g.arc(p[0], p[1], 5, 0, 2 * Math.PI); g.fill();
       g.font = 'bold 18px system-ui'; g.fillStyle = '#fff'; g.fillText(d.colour + (d.ok ? '' : ' ?'), a, b - 10);
+    }
+    if (gripperObservation) {
+      const drawTcp = (tablePoint, colour, label, radius) => {
+        const p = P(tablePoint);
+        g.strokeStyle = colour; g.fillStyle = colour; g.lineWidth = 3;
+        g.beginPath(); g.arc(p[0], p[1], radius, 0, 2 * Math.PI); g.stroke();
+        g.beginPath(); g.moveTo(p[0] - radius - 3, p[1]); g.lineTo(p[0] + radius + 3, p[1]); g.moveTo(p[0], p[1] - radius - 3); g.lineTo(p[0], p[1] + radius + 3); g.stroke();
+        g.font = 'bold 15px system-ui'; g.fillText(label, p[0] + radius + 6, p[1] - radius - 3);
+      };
+      const comparison = gripperObservation.comparison;
+      if (comparison?.plannedBoardMm) drawTcp(boardToTableMm(comparison.plannedBoardMm), '#ffc36c', 'planned TCP', 5);
+      if (comparison?.simulatedBoardMm) drawTcp(boardToTableMm(comparison.simulatedBoardMm), '#57c7a5', 'sim TCP', 6);
+      drawTcp(gripperObservation.tcpTableMm, '#ee66ff', 'observed TCP', 8);
     }
     params();
   }
@@ -311,5 +422,9 @@ export function initCameraTab(ctx) {
     $('cam-source').value = 'saved';
     loadSource();
   }
-  return { update, render, markDirty: () => { dirty = true; }, get calibration() { return cal; }, addTracker, grabFrame, activate };
+  return {
+    update, render, markDirty: () => { dirty = true; }, addTracker, grabFrame, activate,
+    get calibration() { return cal; },
+    get gripperObservation() { return gripperObservation ? structuredClone(gripperObservation) : null; },
+  };
 }

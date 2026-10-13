@@ -14,10 +14,24 @@ test('active preserved UI is wired to the canonical planning, Rapier and operati
   const index = webFile('index.html');
   const app = webFile('js/app.js');
   assert.match(index, /src="js\/app\.js"/);
+  assert.match(index, /id="task-preset"/);
+  assert.match(index, /Move the red cube to the blue zone/);
+  assert.ok(index.indexOf('id="go-home"') < index.indexOf('<h2>Task<\/h2>'));
+  assert.match(index, /id="go-straight"/);
   assert.match(app, /planTextTask/);
+  assert.match(app, /optimizeJointPath/);
+  assert.match(app, /straightUpPose/);
+  assert.match(app, /contactNeedsArmStop/);
+  const poseHandler = app.slice(app.indexOf('const poseCmd'), app.indexOf("$('go-home')"));
+  assert.ok(poseHandler.indexOf('ctl.runPoses') < poseHandler.lastIndexOf('moveVisualS5Offset'), 'visual wrist motion starts only after simulated pose acceptance');
+  assert.match(app, /\$\('task-preset'\)\.onchange/);
   assert.match(app, /PhysicsWorld/);
   assert.match(app, /RobotArmClient/);
   assert.match(app, /runtimeSpec/);
+  assert.match(app, /photoReference/);
+  assert.match(app, /latestGripperObservation/);
+  assert.match(webFile('js/camview.js'), /estimateGripperMarkerPose/);
+  assert.match(webFile('index.html'), /gripper-marker-id6\.svg/);
 });
 
 test('only one application shell remains after the runtime consolidation', () => {

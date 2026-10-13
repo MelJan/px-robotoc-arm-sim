@@ -7,6 +7,7 @@ import { connectionInfo, proxyDecision } from './src/operational/gateway.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const STATIC_ROOT = path.join(ROOT, 'dist');
+const PHOTO_ROOT = path.join(path.dirname(ROOT), 'docs', 'images', 'photos');
 const TYPES = {
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
@@ -15,6 +16,8 @@ const TYPES = {
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
+  '.jpeg': 'image/jpeg',
+  '.jpg': 'image/jpeg',
   '.wasm': 'application/wasm',
 };
 
@@ -49,21 +52,31 @@ function staticFile(pathname) {
   return file === STATIC_ROOT || file.startsWith(`${STATIC_ROOT}${path.sep}`) ? file : null;
 }
 
-function serveStatic(request, response, pathname) {
-  const file = staticFile(pathname);
+export function referencePhotoFile(pathname) {
+  const match = pathname.match(/^\/reference-photos\/([A-Za-z0-9._-]+\.(?:jpe?g|png))$/i);
+  return match ? path.join(PHOTO_ROOT, match[1]) : null;
+}
+
+function serveFile(request, response, file, cacheControl = 'no-cache') {
   if (!file || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
-    sendJson(response, 404, { error: 'Unknown path. Run npm run build before starting the gateway.' });
+    sendJson(response, 404, { error: 'Unknown file' });
     return;
   }
   const headers = {
     'Content-Type': TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream',
     'Content-Length': fs.statSync(file).size,
-    'Cache-Control': 'no-cache',
+    'Cache-Control': cacheControl,
     'X-Content-Type-Options': 'nosniff',
   };
   response.writeHead(200, headers);
   if (request.method === 'HEAD') response.end();
   else fs.createReadStream(file).on('error', () => response.destroy()).pipe(response);
+}
+
+function serveStatic(request, response, pathname) {
+  const file = staticFile(pathname);
+  if (!file || !fs.existsSync(file)) return sendJson(response, 404, { error: 'Unknown path. Run npm run build before starting the gateway.' });
+  serveFile(request, response, file);
 }
 
 async function proxy(request, response, controller, allowMotion, pathname) {
@@ -109,6 +122,7 @@ export function createGateway({ controller = null, allowMotion = false } = {}) {
       }
       if (url.pathname.startsWith('/api/')) return await proxy(request, response, controller, allowMotion, url.pathname);
       if (!['GET', 'HEAD'].includes(request.method)) return sendJson(response, 405, { error: 'GET or HEAD required' });
+      if (url.pathname.startsWith('/reference-photos/')) return serveFile(request, response, referencePhotoFile(url.pathname));
       serveStatic(request, response, url.pathname);
     } catch (error) {
       if (!response.headersSent) sendJson(response, 500, { error: error.message });

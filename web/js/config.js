@@ -96,6 +96,7 @@ export const PLAN = {
   descentStep: 1.0,     // cm between IK waypoints on a vertical descent
   clearance: 0.05,      // collision tolerance, cm (0,5 mm)
   transitMargin: 0.15,  // planned paths keep 1,5 mm between the arm (or a held cube) and other cubes
+  returnMargin: 0.6,    // HOME/PARK returns keep 6 mm from released cubes and stacks
 };
 
 export const COLOURS = {

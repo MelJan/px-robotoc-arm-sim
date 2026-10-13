@@ -28,7 +28,9 @@ export class PhysicsWorld {
     this.spec = spec;
     this.ready = false;
     this.cubeBodies = new Map();
+    this.cubeColliders = new Map();
     this.robotBodies = new Map();
+    this.robotColliders = new Map();
     this.carriedCubeId = null;
     this.initialCubePositions = Object.fromEntries(spec.world.cubes.map((cube) => [cube.id, [...cube.position]]));
   }
@@ -44,16 +46,18 @@ export class PhysicsWorld {
     for (const cube of this.spec.world.cubes) {
       const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(...Object.values(vector(cube.position))).setCanSleep(true));
       const half = this.spec.dimensions.testCube * METRES_PER_MILLIMETRE / 2;
-      this.world.createCollider(RAPIER.ColliderDesc.cuboid(half, half, half).setDensity(220).setFriction(0.72).setRestitution(0.04), body);
+      const collider = this.world.createCollider(RAPIER.ColliderDesc.cuboid(half, half, half).setDensity(220).setFriction(0.72).setRestitution(0.04), body);
       this.cubeBodies.set(cube.id, body);
+      this.cubeColliders.set(cube.id, collider);
     }
-    for (const capsule of robotCapsules(this.spec, initialCounts)) {
+    for (const capsule of robotCapsules(this.spec, initialCounts, { physicsGripper: true })) {
       if (capsule.fixed) continue;
       const pose = segmentPose(capsule.start, capsule.end);
       const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(pose.center.x, pose.center.y, pose.center.z).setRotation(pose.rotation));
       const halfHeight = Math.max(0.0001, pose.length / 2 - capsule.radius * METRES_PER_MILLIMETRE);
-      this.world.createCollider(RAPIER.ColliderDesc.capsule(halfHeight, capsule.radius * METRES_PER_MILLIMETRE).setFriction(0.65), body);
+      const collider = this.world.createCollider(RAPIER.ColliderDesc.capsule(halfHeight, capsule.radius * METRES_PER_MILLIMETRE).setFriction(0.65), body);
       this.robotBodies.set(capsule.id, body);
+      this.robotColliders.set(capsule.id, collider);
     }
     this.ready = true;
     return this;
@@ -68,7 +72,7 @@ export class PhysicsWorld {
 
   setRobotPose(counts) {
     if (!this.ready) return;
-    for (const capsule of robotCapsules(this.spec, counts)) {
+    for (const capsule of robotCapsules(this.spec, counts, { physicsGripper: true })) {
       const body = this.robotBodies.get(capsule.id);
       if (!body) continue;
       const pose = segmentPose(capsule.start, capsule.end);
@@ -100,7 +104,34 @@ export class PhysicsWorld {
     this.carriedCubeId = null;
   }
 
-  step() { if (this.ready) this.world.step(); }
+  step(dt = this.spec.world.physics.fixedTimeStep) {
+    if (!this.ready) return;
+    this.world.timestep = dt;
+    this.world.step();
+  }
+
+  robotCubeContacts() {
+    if (!this.ready) return [];
+    const cubeByHandle = new Map([...this.cubeColliders].map(([id, collider]) => [collider.handle, id]));
+    const contacts = [];
+    for (const [part, collider] of this.robotColliders) {
+      this.world.contactPairsWith(collider, (other) => {
+        const cube = cubeByHandle.get(other.handle);
+        if (!cube) return;
+        let touching = false;
+        this.world.contactPair(collider, other, (manifold) => {
+          for (let index = 0; index < manifold.numContacts(); index += 1) {
+            // Rapier retains broad/narrow-phase pairs before surfaces touch.
+            // Treat only penetration or a sub-millimetre speculative contact as
+            // a runtime collision.
+            if (manifold.contactDist(index) <= 0.0005) touching = true;
+          }
+        });
+        if (touching) contacts.push({ a: part, b: `${cube} cube` });
+      });
+    }
+    return contacts;
+  }
 
   cubeTransforms() {
     return Object.fromEntries([...this.cubeBodies].map(([id, body]) => {

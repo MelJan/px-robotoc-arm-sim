@@ -13,7 +13,9 @@ The application now supports full virtual simulation and planning:
 - deterministic optimizing joint-space planning and smoothing;
 - text pick/place tasks with approach/lift waypoints and collision verification;
 - coordinated and one-servo-at-a-time playback;
-- lazy-loaded Rapier3D contact physics and dynamic solid cubes; and
+- lazy-loaded Rapier3D contact physics and dynamic solid cubes;
+- live robot/cube contact stopping plus clearance-routed task returns;
+- calibrated gripper-marker tracking for planned/simulated/observed TCP comparison; and
 - simulation plus explicitly guarded read-only/disarmed/armed operational
   modes for the existing robot-arm API.
 
@@ -54,6 +56,7 @@ separate embedded Rapier WebAssembly runtime.
 | Path | Purpose |
 | --- | --- |
 | `web/js/app.js` | active preserved UI, camera/model orchestration and integration |
+| `web/js/gripper-tracker.js` | marker pose and physical TCP estimation |
 | `web/js/model/` | detailed photo-informed robot, fixture, mat, cables and gripper |
 | `web/js/advanced.js` | canonical-mm adapter for the preserved visual calibration |
 | `web/src/core/` | pure kinematics, collision, planning, playback and physics adapters |
@@ -61,9 +64,11 @@ separate embedded Rapier WebAssembly runtime.
 | `web/src/operational/gateway.js` | allowlist policy for proxied robot routes |
 | `web/server.mjs` | production static server and read-only-by-default API gateway |
 | `web/public/arm-spec.json` | millimetre model, planner settings and provenance |
-| `web/test/` | 27 model, planner, physics, connection and safety tests |
+| `web/test/` | 40 model, planner, physics, tracking, connection and reference-integrity tests |
 | `web/README.md` | usage and operational-mode guide |
 | `docs/threejs-implementation.md` | detailed design and validation status |
+| `docs/arm-photo-reference.md` | hardware-photo index and overlay validation workflow |
+| `docs/gripper-marker-tracking.md` | printable marker setup and TCP comparison procedure |
 
 The root repository may also contain separate Blender work in other checkouts.
 Do not combine it with this branch without an explicit specification-integration

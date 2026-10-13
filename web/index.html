@@ -51,9 +51,29 @@
 
     <!-- ======================= Arm & tasks ======================= -->
     <div id="tab-control">
+      <section class="card pose-card">
+        <h2>Robot position</h2>
+        <div class="pose-buttons">
+          <button id="go-home" class="big">HOME</button>
+          <button id="go-park" class="big">PARK</button>
+          <button id="go-straight" class="big">STRAIGHT UP</button>
+        </div>
+        <p class="note">Collision-verified virtual positioning. Wait for <strong>idle</strong> before choosing another position.</p>
+      </section>
+
       <section class="card hero">
         <h2>Task</h2>
         <p class="safety-strip">Simulation by default · real mode requires a same-origin robot API and explicit arming</p>
+        <label class="task-picker" for="task-preset">
+          <span>Choose a simulation task</span>
+          <select id="task-preset">
+            <option value="">Select a task…</option>
+            <option value="Move the red cube to the orange zone">Red cube → orange zone</option>
+            <option value="Move the red cube to the blue zone">Red cube → blue zone</option>
+            <option value="Move the green cube to the red zone">Green cube → red zone</option>
+            <option value="Move the green cube to the blue zone">Green cube → blue zone</option>
+          </select>
+        </label>
         <div class="row">
           <input id="cmd" class="big" type="text" placeholder="blue on orange · grün auf blau · yellow to 0 14" autocomplete="off">
         </div>
@@ -83,8 +103,6 @@
         <summary>Joints <small>PCA9685 counts at 60 Hz · simulated</small></summary>
         <div id="joints"></div>
         <div class="row wrap">
-          <button id="go-home">Go HOME</button>
-          <button id="go-park">Go PARK</button>
           <button id="power-on" title="Resume the simulated controller after a stop">Re-arm simulation</button>
           <label class="inline">Jog step <input id="step" type="number" min="1" max="100" value="10"></label>
           <label class="inline"><input type="checkbox" id="stop-on-contact" checked> Stop on collision</label>
@@ -162,6 +180,7 @@
           <select id="cam-source">
             <option value="saved">Saved frame, 2026-10-12</option>
             <option value="file">Image file…</option>
+            <option value="connected">Connected camera snapshot</option>
           </select>
           <button id="cam-refresh" hidden disabled>Refresh snapshot</button>
           <input id="cam-file" type="file" accept="image/*" hidden>
@@ -209,18 +228,36 @@
       </details>
 
       <details open>
-        <summary>Cube recognition <small>cubes lying on the mat</small></summary>
+        <summary>Gripper marker tracking <small>observed physical TCP</small></summary>
+        <p class="note">Attach the dedicated marker rigidly near the gripper, measure its offset to the TCP, and keep its printed face visible to the OAK camera.</p>
         <div class="row wrap">
-          <button id="cam-detect" class="primary big">Find cubes</button>
-          <button id="cam-detect-use" disabled>Put them into the sim</button>
+          <a class="button-link" href="gripper-marker-id6.svg" download="px-gripper-marker-dict4x4-50-id6.svg">Download marker ID 6</a>
+          <label class="inline">Black marker size <input id="gripper-marker-size" type="number" min="10" max="80" step="0.1"> mm</label>
         </div>
         <div class="row wrap">
-          <label class="inline" title="Repeatedly runs the trackers on the current local reference frame"><input type="checkbox" id="cam-track"> Track continuously</label>
+          <span class="note">Marker → TCP offset</span>
+          <label class="inline">x <input id="gripper-offset-x" type="number" step="0.1"> mm</label>
+          <label class="inline">y <input id="gripper-offset-y" type="number" step="0.1"> mm</label>
+          <label class="inline">z <input id="gripper-offset-z" type="number" step="0.1"> mm</label>
+          <button id="gripper-detect" class="primary">Find marker &amp; compare</button>
+        </div>
+        <p class="note">Marker axes: +X right, +Y toward the printed top, +Z out of the printed face. The default zero offset reports the marker centre, not the real TCP.</p>
+        <div class="row wrap">
+          <label class="inline" title="Repeatedly reloads a connected snapshot, or reprocesses the selected local frame"><input type="checkbox" id="cam-track"> Track continuously</label>
           <label class="inline">every
             <select id="cam-track-rate"><option value="2000">2 s</option><option value="1000" selected>1 s</option><option value="500">0,5 s</option><option value="200">0,2 s</option></select></label>
           <label class="inline"><input type="checkbox" id="cam-track-sim"> Move sim cubes to what the camera sees</label>
         </div>
         <p class="note" id="cam-track-stats"></p>
+        <div id="gripper-track-result" class="tracking-result note">Marker ID 6 has not been observed.</div>
+      </details>
+
+      <details open>
+        <summary>Cube recognition <small>cubes lying on the mat</small></summary>
+        <div class="row wrap">
+          <button id="cam-detect" class="primary big">Find cubes</button>
+          <button id="cam-detect-use" disabled>Put them into the sim</button>
+        </div>
         <div id="cam-detections" class="note"></div>
       </details>
     </div>

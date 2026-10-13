@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { connectionInfo, proxyDecision } from '../src/operational/gateway.js';
-import { createGateway } from '../server.mjs';
+import { createGateway, referencePhotoFile } from '../server.mjs';
 
 test('gateway is read-only plus emergency stop by default', () => {
   assert.deepEqual(proxyDecision('GET', '/api/state'), { allowed: true, kind: 'read' });
+  assert.deepEqual(proxyDecision('GET', '/api/camera/status'), { allowed: true, kind: 'read' });
+  assert.deepEqual(proxyDecision('GET', '/api/camera/snapshot.jpg'), { allowed: true, kind: 'read' });
+  assert.equal(proxyDecision('GET', '/api/camera/stream.mjpg').allowed, false);
   assert.deepEqual(proxyDecision('POST', '/api/stop'), { allowed: true, kind: 'stop' });
   assert.equal(proxyDecision('POST', '/api/move').allowed, false);
   assert.equal(proxyDecision('POST', '/api/power_on').status, 403);
@@ -30,4 +33,10 @@ test('gateway construction has no listening or controller side effect', () => {
   const gateway = createGateway({ controller: new URL('http://robot.local:8765'), allowMotion: false });
   assert.equal(gateway.listening, false);
   gateway.close();
+});
+
+test('reference photo route accepts only a flat image filename', () => {
+  assert.match(referencePhotoFile('/reference-photos/park-front.jpg'), /docs\/images\/photos\/park-front\.jpg$/);
+  assert.equal(referencePhotoFile('/reference-photos/../arm-spec.json'), null);
+  assert.equal(referencePhotoFile('/reference-photos/note.txt'), null);
 });

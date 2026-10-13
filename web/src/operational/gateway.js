@@ -1,4 +1,4 @@
-const READ_PATHS = new Set(['/api/state']);
+const READ_PATHS = new Set(['/api/state', '/api/camera/status', '/api/camera/snapshot.jpg']);
 const STOP_PATH = '/api/stop';
 const MOTION_PATHS = new Set(['/api/power_on', '/api/power_off', '/api/move']);
 
@@ -11,7 +11,7 @@ export function proxyDecision(method, pathname, { allowMotion = false } = {}) {
       ? { allowed: true, kind: 'motion' }
       : { allowed: false, status: 403, error: 'Motion is disabled in this gateway. Restart with --allow-motion for an attended operational session.' };
   }
-  return { allowed: false, status: 404, error: 'The gateway exposes only state, stop, power and single-joint move endpoints.' };
+  return { allowed: false, status: 404, error: 'The gateway exposes only state, camera status/snapshot, stop, power and single-joint move endpoints.' };
 }
 
 export function connectionInfo(controller, allowMotion) {

@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "serve": "node server.mjs",
+    "compare:photos": "node tools/compare.mjs",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {

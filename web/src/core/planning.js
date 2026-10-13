@@ -232,6 +232,9 @@ export function planTextTask(spec, start, text) {
   return { success: verification.valid, task, path: fullPath, waypoints, events, verification, metrics, cost: costFromMetrics(spec, metrics), algorithm: 'Cartesian approach/lift waypoints + IK + optimizing joint planner' };
 }
 
-export function planReferenceTransition(spec, from, name) {
-  return optimizeJointPath(spec, from, referencePose(spec, name), { ignoreCubes: true });
+export function planReferenceTransition(spec, from, name, options = {}) {
+  return optimizeJointPath(spec, from, referencePose(spec, name), {
+    ...options,
+    ignoreCubes: options.ignoreCubes ?? false,
+  });
 }

@@ -1,4 +1,5 @@
-// ArUco marker detection for the mat markers (DICT_4X4_50, ids 0..5), in plain JS.
+// ArUco marker detection for the mat markers (DICT_4X4_50, ids 0..5) and the
+// gripper tracking marker (id 6), in plain JS.
 // Works on any camera position: the camera is then calibrated from the detected corners.
 //
 // 1. Grey image, adaptive threshold (local mean over a window, integral image).
@@ -10,10 +11,11 @@
 // 5. Corners are returned in OpenCV's order (clockwise from the marker's top-left), the same
 //    order as calib.js MARKER_CORNERS, so they can go straight into the calibration.
 
-// DICT_4X4_50 inner bits for ids 0..5, rows top to bottom, 1 = white (from OpenCV).
+// DICT_4X4_50 inner bits for ids 0..6, rows top to bottom, 1 = white (from OpenCV).
 export const DICT = {
   0: ['1011', '0101', '0011', '0010'], 1: ['0000', '1111', '1001', '1010'], 2: ['0011', '0011', '0010', '1101'],
   3: ['1001', '1001', '0100', '0110'], 4: ['0101', '0100', '1001', '1110'], 5: ['0111', '1001', '1100', '1101'],
+  6: ['1001', '1110', '0010', '1110'],
 };
 const CODES = Object.entries(DICT).map(([id, rows]) => ({ id: Number(id), bits: rows.join('').split('').map(Number) }));
 
@@ -138,8 +140,8 @@ function readBits(g, w, h, quad) {
 const rotCW = b => { const o = new Array(16); for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) o[r * 4 + c] = b[(3 - c) * 4 + r]; return o; };
 
 /**
- * Detect the mat markers. img: ImageData. Returns { [id]: [[x,y] x 4] } in OpenCV corner order,
- * plus `candidates` (quads looked at) for display.
+ * Detect the known mat/gripper markers. img: ImageData. Returns
+ * { [id]: [[x,y] x 4] } in OpenCV corner order, plus `candidates` for display.
  */
 export function detectMarkers(img, { window = 31, offset = 7, minArea = 60, maxArea = 60000 } = {}) {
   const { width: w, height: h } = img;

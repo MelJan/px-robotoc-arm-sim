@@ -51,6 +51,7 @@ production build.
 - Rapier fixed board/fixture colliders, kinematic arm colliders, dynamic cubes
   and simulated grasp/release;
 - HOME, observed commissioning PARK and straight-up references; and
+- read-only gripper-marker tracking that compares planned, simulated and camera-observed TCP positions; and
 - simulation, connected read-only, operational-disarmed, operational-armed and
   fault/stopped modes.
 
@@ -60,10 +61,22 @@ continuous least-action variational problem.
 
 ## Controls
 
-Joint sliders show servo counts and provisional model angles. **Go HOME** and
-**Go PARK** plan and verify the requested transition before playback. PARK is
-modelled as supported contact on the raised fixture plate, whose provisional
-photo-derived top is 25 mm above the board.
+The first card contains **HOME**, **PARK** and **STRAIGHT UP** positioning.
+Each transition is planned and collision-verified before virtual playback.
+Reference-pose planning includes the live cube positions. For task playback,
+the return to HOME uses an additional 6 mm detailed-model clearance margin and
+inserts a raised transit when the direct return passes too close to a stack.
+STRAIGHT UP is a provisional open-gripper modelling pose and is intentionally
+simulation-only. PARK is modelled as supported contact on the raised fixture
+plate, whose provisional photo-derived top is 25 mm above the board. Joint
+sliders below show servo counts and provisional model angles.
+
+The Task card includes a preset dropdown for the verified default-scene
+examples. Selecting an entry only fills the task command: use **Plan** to
+calculate and collision-check it, inspect the result, and then use **Run in
+sim**. Reset the Scene before treating each preset as an independent example.
+Reset replaces the Rapier world atomically, so stale cube transforms cannot be
+written back while the new world loads.
 
 Enter a task such as:
 
@@ -82,6 +95,19 @@ interpolation and a sequence in which only one servo command changes at a time.
 The guarded real-mode controls are under **Tools → Mode & robot API** so the
 restored dark split-pane layout, camera tools and scene controls remain intact.
 
+## Gripper marker tracking
+
+The Camera tab recognizes the dedicated 30 mm OpenCV `DICT_4X4_50` marker ID 6.
+It estimates the marker pose in the mat frame, applies the operator-measured
+marker-to-TCP offset, and reports planned, simulated and observed TCP positions
+in millimetres. A printable SVG is included at
+`public/gripper-marker-id6.svg`. See
+[the setup guide](../docs/gripper-marker-tracking.md) before attaching it.
+
+Saved/local images work offline. **Connected camera snapshot** uses the guarded
+gateway's read-only `/api/camera/snapshot.jpg` route. It remains opt-in and does
+not enable robot motion. Connected continuous tracking is limited to 1 Hz.
+
 ## Operational mode
 
 The optional adapter targets the existing `lutich/robot-arm` FastAPI contract:
@@ -99,7 +125,7 @@ Build before running the production gateway:
 | Purpose | Command | POST policy |
 | --- | --- | --- |
 | Simulation only | `npm run serve` | no controller configured |
-| Inspect real state | `npm run serve -- --controller http://ROBOT_HOST:8765` | only `/api/stop` passes |
+| Inspect real state/camera | `npm run serve -- --controller http://ROBOT_HOST:8765` | camera/state GET and `/api/stop` pass |
 | Attended operation | `npm run serve -- --controller http://ROBOT_HOST:8765 --allow-motion` | only stop, power and single-joint move routes pass |
 
 The gateway binds to `127.0.0.1:8770` by default. Use `--host` and `--port` only
@@ -144,4 +170,6 @@ observed commissioning reference and is not declared motion-validated or safe
 for unattended hardware execution.
 
 See [the implementation document](../docs/threejs-implementation.md) for the
-architecture and validation details.
+architecture and validation details. See
+[the photo-reference guide](../docs/arm-photo-reference.md) for the physical-arm
+evidence map and reproducible overlay command.

@@ -44,11 +44,13 @@ The physical servos do not report position. UI and documentation therefore say
 index.html                          preserved dark split-pane application shell
 style.css                           preserved responsive visual design
 js/app.js                           active UI, camera/model and runtime integration
+js/gripper-tracker.js               square-marker pose and physical TCP estimate
 js/model/                           detailed robot, fixture, mat and cable rendering
 js/render.js                        preserved camera, lighting and renderer
 js/advanced.js                      canonical-mm/photo-model calibration adapter
 js/kinematics.js                    photo-fitted visual kinematics (centimetres)
 js/collision.js, js/planner.js      detailed-geometry verification/fallback planning
+js/contact-policy.js                task-aware runtime contact stop policy
 src/config/spec.js                  canonical schema validation
 src/core/math.js                    dependency-free vector/transform helpers
 src/core/kinematics.js              count conversion, FK, numerical IK
@@ -61,6 +63,7 @@ src/operational/gateway.js          proxy endpoint allowlist
 server.mjs                          production assets + guarded same-origin proxy
 public/arm-spec.json                versioned millimetre specification
 test/*.test.js                      Node test suite
+tools/compare.mjs                   offline model/photo overlay generator
 ```
 
 Core modules contain no Three.js objects. They operate on plain arrays and
@@ -132,6 +135,20 @@ outlines. It includes:
 The cosmetic detail is photo-informed, not surveyed CAD. It does not silently
 replace the measured joint-origin translations.
 
+### Camera-observed TCP
+
+The camera pipeline reserves OpenCV `DICT_4X4_50` marker ID 6 for the gripper.
+The existing mat markers solve the camera-to-table transform. The gripper
+tracker decomposes the detected square homography using those intrinsics,
+transforms the marker pose into the table/board frame and applies a measured
+marker-to-TCP rigid offset. It displays planned, simulated and observed TCP
+coordinates and point errors in millimetres. The default zero offset is
+explicitly unmeasured and therefore reports the marker centre only.
+
+The read-only gateway permits on-demand camera status and snapshot GETs. No
+camera request occurs at startup; continuous snapshot tracking is explicit and
+limited to 1 Hz. Details are in `docs/gripper-marker-tracking.md`.
+
 | Evidence | Useful for | Not proof of |
 | --- | --- | --- |
 | Mat-calibrated photo overlay | pose, camera and gross link alignment | safe clearance or exact part dimensions |
@@ -143,6 +160,17 @@ The visualization is the preserved `codex/threejs-unified` presentation: dark
 split-pane desktop layout, resizable control panel, Perspective/Top/Side/OAK
 camera views and the existing photo-informed robot. Below 980 px the layout
 becomes a single column without replacing or rebuilding the scene.
+
+The Task card offers a small preset list of planner-verified default-scene
+examples. Choosing one populates the editable command field; planning and
+playback remain separate explicit actions so the verification result can be
+reviewed before motion.
+
+The control panel begins with HOME, PARK and STRAIGHT UP positioning. HOME and
+PARK retain their observed reference counts. STRAIGHT UP is generated from the
+active provisional photo-model calibration with S1-S5 at zero model angle and
+S6 open, clamped to the historical reference bounds; its path is collision
+verified and the control is simulation-only.
 
 ## 6. Kinematics
 
@@ -201,6 +229,15 @@ and a carried box is checked against the board, fixture, other cubes and arm.
 At placement, board support inside the modelling margin is zero-clearance
 contact; after release the box is checked at its destination.
 
+Runtime playback applies the same task-aware contact rule: pad contact with the
+selected cube is expected during descend, grip, lift, lower, release and
+withdraw phases. Rapier robot/cube contact pairs feed the same runtime stop
+policy, so a contact missed by the analytical approximation still stops when
+**Stop on collision** is enabled. Contact with a different cube or another arm
+part remains a stop condition. Independent photo-reference wrist animation
+begins only after a HOME/PARK/STRAIGHT-UP controller path has settled, keeping
+that visual correction out of the verified spatial sweep.
+
 These primitives are conservative approximations. They are not a replacement
 for measured CAD envelopes or physical safety validation.
 
@@ -257,13 +294,20 @@ phase is independently optimized and collision verified. Plan results display
 waypoint count, servo adjustments, count travel, TCP length, minimum clearance
 and total cost.
 
+The photo-model fallback applies a 6 mm margin to the final return. If a direct
+HOME segment passes too close to a released cube or stack, it inserts a raised
+transit waypoint before HOME. Reference-pose buttons plan against the current
+cube positions rather than ignoring the scene.
+
 ## 10. Rapier physics
 
 Rapier contains fixed board/fixture colliders, position-based kinematic arm
 capsules and four dynamic cube rigid bodies with friction and low restitution.
-It runs at a fixed 1/60 s step. During virtual grasp the selected cube becomes
-kinematic and follows the modeled tool attachment point; release restores a
-dynamic body so gravity and contact settle it.
+Its timestep follows each bounded application substep. The paired gripper
+capsules follow the commanded S6 pad gap instead of remaining at a fixed open
+spacing. During virtual grasp the selected cube becomes kinematic and follows
+the modeled tool attachment point; release restores a dynamic body so gravity
+and contact settle it.
 
 Physics validates contact behavior and object motion. It does not choose the
 route. The optimizing planner remains responsible for collision-free path
@@ -273,10 +317,10 @@ selection, which avoids conflating dynamics with search.
 
 The adapter matches the existing FastAPI routes and its same-origin rule.
 `server.mjs` serves the built application and proxies a deliberately small
-allowlist. Without `--allow-motion`, only `GET /api/state` and emergency
-`POST /api/stop` pass. With the flag, power-on, power-off and single-joint move
-are additionally available. Starting the server or opening the page performs
-no controller request.
+allowlist. Without `--allow-motion`, state and camera status/snapshot GETs plus
+emergency `POST /api/stop` pass. With the flag, power-on, power-off and
+single-joint move are additionally available. Starting the server or opening
+the page performs no controller request.
 
 The app rejects HTML fallbacks, malformed state, missing channels and
 non-integer commands. After explicit connection it polls state every 1.5 s.
@@ -290,7 +334,7 @@ browser stop still requires the physical servo power switch.
 
 ## 12. Validation
 
-`npm test` runs 27 tests covering:
+`npm test` runs 40 tests covering:
 
 - schema units, fixture height, provenance and physical HOME S6;
 - linear/anchored count conversion, deterministic FK and reachable IK;
@@ -301,8 +345,11 @@ browser stop still requires the physical servo power switch.
 - strict robot-state parsing and explicit-PARK operational guards;
 - gateway read-only/motion allowlists;
 - backend bounds, single-servo paths, command confirmation and stop-on-failure;
+- gripper marker identification, pose recovery and marker configuration;
 - schema failure cases, deterministic planning and motion-cost ordering; and
-- Rapier world/collider initialization.
+- Rapier world/collider initialization, variable timestep and robot/cube
+  contact reporting; and
+- detailed return-clearance routing before HOME.
 
 Manual browser validation covers task planning/playback, cube grasp/drop,
 HOME, PARK, API refusal on a non-backend origin, console output and mobile

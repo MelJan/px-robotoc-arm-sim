@@ -21,6 +21,12 @@ export function validateArmSpec(spec) {
     if (joint.boundsStatus !== 'historical-unvalidated') errors.push(`${joint.id} bounds must retain historical-unvalidated provenance`);
   }
   if (spec?.fixture?.upperPlate?.top !== 25) errors.push('fixture upper surface must remain at the photo-derived 25 mm height');
+  const marker = spec?.tracking?.gripperMarker;
+  if (marker?.dictionary !== 'DICT_4X4_50' || marker?.id !== 6) errors.push('tracking.gripperMarker must use reserved DICT_4X4_50 marker id 6');
+  if (!(marker?.sizeMm > 0)) errors.push('tracking.gripperMarker.sizeMm must be positive');
+  if (!Array.isArray(marker?.markerToTcpMm) || marker.markerToTcpMm.length !== 3 || marker.markerToTcpMm.some(value => !Number.isFinite(value))) {
+    errors.push('tracking.gripperMarker.markerToTcpMm must contain three finite millimetre values');
+  }
   if (errors.length) throw new Error(`Invalid arm specification:\n- ${errors.join('\n- ')}`);
   return spec;
 }

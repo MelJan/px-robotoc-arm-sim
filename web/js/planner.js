@@ -152,6 +152,7 @@ function insertVias(world, steps, start, servos) {
   w.step(0, cur);
   for (let i = 0; i < steps.length; i++) {
     const next = steps[i].counts;
+    w.margin = steps[i].phase === 'return' ? PLAN.returnMargin : PLAN.transitMargin;
     if (!segmentClear(w, cur, next)) {
       const via = findVia(w, cur, next, servos);
       if (via) {

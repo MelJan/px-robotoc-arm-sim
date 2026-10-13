@@ -36,18 +36,23 @@ function capsuleBoxClearance(capsule, box) {
   return closest - capsule.radius;
 }
 
-export function robotCapsules(spec, counts) {
+export function robotCapsules(spec, counts, options = {}) {
   const pose = forwardKinematics(spec, counts);
   const radii = spec.collision.linkRadii;
   const gripperLength = pose.gripper.length;
-  const gripperStart = Math.min(40, gripperLength * 0.35);
+  const gripperStart = options.physicsGripper ? Math.min(25, gripperLength * 0.25) : Math.min(40, gripperLength * 0.35);
+  // Put each gripper capsule on the rendered jaw, with its inner surface at
+  // the requested pad gap. The old fixed +/-30 mm centres described an open
+  // claw even when S6 was closed, so Rapier could miss visible cube impacts.
+  const padRadius = options.physicsGripper ? Math.min(4, radii.gripper) : Math.min(3, radii.gripper);
+  const padCenter = options.physicsGripper ? pose.gripper.gap / 2 + padRadius : 30;
   return [
     { id: 'pedestal', start: [0, 0, spec.fixture.upperPlate.top], end: pose.shoulder, radius: radii.pedestal, fixed: true },
     { id: 'upperArm', start: pose.shoulder, end: pose.elbow, radius: radii.upperArm },
     { id: 'forearm', start: pose.elbow, end: pose.wrist, radius: radii.forearm },
     { id: 'wrist', start: pose.wrist, end: pose.flange, radius: radii.wrist },
-    { id: 'gripperFront', start: transformPoint(pose.toolTransform, [30, 0, gripperStart]), end: transformPoint(pose.toolTransform, [30, 0, gripperLength]), radius: Math.min(3, radii.gripper) },
-    { id: 'gripperBack', start: transformPoint(pose.toolTransform, [-30, 0, gripperStart]), end: transformPoint(pose.toolTransform, [-30, 0, gripperLength]), radius: Math.min(3, radii.gripper) },
+    { id: 'gripperFront', start: transformPoint(pose.toolTransform, [padCenter, 0, gripperStart]), end: transformPoint(pose.toolTransform, [padCenter, 0, gripperLength]), radius: padRadius },
+    { id: 'gripperBack', start: transformPoint(pose.toolTransform, [-padCenter, 0, gripperStart]), end: transformPoint(pose.toolTransform, [-padCenter, 0, gripperLength]), radius: padRadius },
   ];
 }
 
