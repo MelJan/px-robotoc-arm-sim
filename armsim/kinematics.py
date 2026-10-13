@@ -61,11 +61,12 @@ class Kinematics:
     def roll_options(self, arm_yaw, block_yaw, symmetry=90):
         """Rolls that put the pads on the gripped faces, nearest to zero first.
 
-        The pads separate along the arm's sideways direction (arm_yaw + 90) at zero roll, and a
-        positive roll turns them clockwise seen from above. The gripped faces have the normal
-        block_yaw + 90 (the block's local y). Cubes repeat every 90°, longer blocks every 180°.
+        At zero roll the pads separate along the arm's radial direction (pads_axis x) or sideways
+        (pads_axis y); a positive roll turns them clockwise seen from above. The gripped faces have
+        the normal block_yaw + 90 (the block's local y). Cubes repeat every 90°, longer blocks 180°.
         """
-        base = arm_yaw - block_yaw
+        offset = 90 if self.g.get('pads_axis', 'x') == 'y' else 0     # pad axis at zero roll: sideways or radial
+        base = arm_yaw + offset - block_yaw - 90
         options = sorted({((base + k * symmetry + 180) % 360) - 180 for k in range(0, 360 // symmetry)}, key=abs)
         return options
 

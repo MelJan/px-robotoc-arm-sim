@@ -14,6 +14,8 @@ from pydantic import Field
 from armsim.cameras import MujocoCameraSource, Renderer, scene_cameras
 from armsim.config import ROOT, load_robot, load_scene
 from armsim.driver import MujocoDriver
+from armsim.client import ArmError, SessionArmClient
+from armsim.mover import Mover
 from armsim.physics import Physics, RealtimeStepper, reset_blocks
 from armsim.robotarm import PARK, commit, install
 from armsim.session import sandbox_session
@@ -27,9 +29,26 @@ from roboter_arm.control.presentation.api_models import Body  # noqa: E402
 from roboter_arm.control.presentation.http_api import Server, action  # noqa: E402
 
 
+def _static(path, media_type):
+    def endpoint():
+        return Response(path.read_bytes(), media_type=media_type)
+    return endpoint
+
+
 class MovePose(Body):
     counts: list[int] = Field(min_length=6, max_length=6)
     speed: int | None = None
+
+
+class MoveTo(Body):
+    x: float
+    y: float
+    z: float = 0.01325
+    yaw: float = 0.0
+    lower: bool = True
+    dry: bool = False
+    path: str = 'direct'
+
 
 
 class Sandbox:
@@ -45,6 +64,7 @@ class Sandbox:
         self.session = sandbox_session(self.driver, directory=artifacts / 'poses', demo_directory=artifacts / 'demos')
         self.renderer = Renderer(self.physics)
         self.world = PhysicsWorld(self.physics, self.scene)
+        self.mover = Mover(SessionArmClient(self.session), self.robot, self.scene)
         self.stepper = RealtimeStepper(self.physics)
         self.server = None
 
@@ -78,6 +98,34 @@ class Sandbox:
             except ValueError as error:
                 return JSONResponse({'error': str(error)}, 400)
 
+        web = ROOT / 'web'
+        for route, name, media in (('/arm3d', 'arm3d.html', 'text/html; charset=utf-8'),
+                                   ('/arm3d.js', 'arm3d.js', 'text/javascript; charset=utf-8'),
+                                   ('/arm3d-core.js', 'arm3d-core.js', 'text/javascript; charset=utf-8'),
+                                   ('/arm3d-config.js', 'arm3d-config.js', 'text/javascript; charset=utf-8'),
+                                   ('/vendor/three.module.js', 'vendor/three.module.js', 'text/javascript; charset=utf-8'),
+                                   ('/vendor/OrbitControls.js', 'vendor/OrbitControls.js', 'text/javascript; charset=utf-8'),
+                                   ('/vendor/RoomEnvironment.js', 'vendor/RoomEnvironment.js', 'text/javascript; charset=utf-8')):
+            app.add_api_route(route, _static(web / name, media), methods=['GET'], include_in_schema=False)
+        def move_to(request: Request, args: MoveTo):
+            try:
+                if args.dry:
+                    return {'ok': True, 'result': dict(steps=sandbox.mover.plan(args.x, args.y, args.z, args.yaw, args.lower, args.path))}
+                sandbox.mover.start(args.x, args.y, args.z, args.yaw, args.lower, args.path)
+            except ArmError as error:
+                return JSONResponse({'error': str(error)}, 400)
+            return {'ok': True, 'result': sandbox.mover.status()}
+
+        def move_to_status(request: Request):
+            return sandbox.mover.status()
+
+        def move_to_stop(request: Request, args: Body):
+            sandbox.mover.stop()
+            return {'ok': True, 'result': sandbox.mover.status()}
+
+        app.add_api_route('/move_to', move_to, methods=['POST'], tags=['Sandbox'], summary='Go above x, y (table frame, metres) and lower the open gripper to z')
+        app.add_api_route('/move_to/status', move_to_status, methods=['GET'], tags=['Sandbox'], summary='Progress of the running move')
+        app.add_api_route('/move_to/stop', move_to_stop, methods=['POST'], tags=['Sandbox'], summary='Stop the arm and the move')
         app.add_api_route('/sim/blocks', blocks, methods=['GET'], tags=['Sandbox'], summary='Block positions in the table frame')
         app.add_api_route('/sim/state', sim_state, methods=['GET'], tags=['Sandbox'], summary='Physics state: joint angles, grasp point, held block')
         app.add_api_route('/sim/reset', reset, methods=['POST'], tags=['Sandbox'], summary='Blocks back to their start slots')
@@ -117,7 +165,7 @@ def main():
     sandbox.server.app.state.camera.start()
     fit = sandbox.cameras.get('oak_fit')
     print(f'SANDBOX (MuJoCo) against robot-arm {commit()}: http://{args.host}:{args.port}', flush=True)
-    print('Web page: /  simulation: /simulation  API docs: /docs  sandbox routes: /sim/blocks /sim/state /sim/snapshot.png', flush=True)
+    print('Web page: /  3D view: /arm3d  browser sim: /simulation  API docs: /docs  sandbox routes: /sim/blocks /sim/state /sim/snapshot.png', flush=True)
     if fit:
         print(f'oak camera fitted from robot-arm calibration: {fit["error_px"]:.1f} px RMS over the markers', flush=True)
     finished = threading.Event()
@@ -135,6 +183,10 @@ def main():
                     with sandbox.physics.lock:
                         viewer.sync()
                     time.sleep(1 / 30)
+            # Closing the viewer window must not take the API down; keep serving until Ctrl-C.
+            print('Viewer closed; the API keeps running. Ctrl-C to stop.', flush=True)
+            while True:
+                time.sleep(1)
         else:
             signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
             sandbox.server.run()

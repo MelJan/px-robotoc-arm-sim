@@ -1,6 +1,6 @@
 """Generates the MuJoCo model (MJCF) from config/robot.yaml and config/scene.yaml.
 
-Gripper jaws open across the arm plane (along table Y when the arm points forward) at S5 home.
+Gripper jaws open in the arm plane (gripper.pads_axis: x) or across it (y) at S5 home.
 Table frame: origin at the midpoint of the table edge nearest the arm, +X away from the arm,
 +Y left seen from the arm, Z up. Pitch joints turn about +Y, so a positive angle leans a link
 toward +X. Joint names S1..S6 match the servo channels 0..5.
@@ -8,7 +8,7 @@ toward +X. Joint names S1..S6 match the servo channels 0..5.
 import math
 
 from armsim.calibration import Calibration
-from armsim.robotarm import BOUNDS
+from armsim.robotarm import BOUNDS, PARK
 
 ARM = 'class="arm"'
 OBJECT = 'class="object"'
@@ -86,6 +86,21 @@ def block_xml(block, slot):
     raise ValueError(f'unknown block kind {block["kind"]}')
 
 
+def rest_height(robot, cal, inline, park=None):
+    """Lowest point of the pads in the PARK pose (metres above the table), or 0 if below it."""
+    park = park or PARK
+    links, g = robot['links'], robot['gripper']
+    a1, a2, a3 = (math.radians(cal.angle(c, park[c])) for c in (1, 2, 3))
+    link = math.radians(cal.angle(5, park[5]))
+    grasp_z = (links['shoulder_height'] + links['upper_arm'] * math.cos(a1) + links['forearm'] * math.cos(a1 + a2)
+               + (links['wrist'] + g['gear_v'] + g['link_length'] * math.cos(link) + g['tip_down']) * math.cos(a1 + a2 + a3))
+    tilt = a1 + a2 + a3 - math.pi                     # gripper tilt from straight down, in the arm plane
+    half_gap = g['gear_u'] + g['link_length'] * math.sin(link) - g['tip_inward']
+    drop = abs(half_gap * math.sin(tilt)) if inline else 0.0
+    lowest = grasp_z - drop - g['pad_height'] / 2 * abs(math.cos(tilt)) - g['pad_thickness'] / 2 * abs(math.sin(tilt))
+    return max(0.0, lowest - 0.0003)
+
+
 def build_xml(robot, scene, cameras=None):
     links, gripper, servo = robot['links'], robot['gripper'], robot['servo']
     table, base, physics = scene['table'], scene['base'], scene['physics']
@@ -99,19 +114,26 @@ def build_xml(robot, scene, cameras=None):
     tip_in, tip_down = gripper['tip_inward'], gripper['tip_down']
     pad_h, pad_t = gripper['pad_height'], gripper['pad_thickness']
 
+    inline = gripper.get('pads_axis', 'x') == 'x'      # jaws open in the arm plane (x) or across it (y)
+
     def jaw(side):
-        # Jaws open across the arm plane: pivots along local y, swing about local x.
         s = -1 if side == 'left' else 1
-        axis = fmt(-s, 0, 0)   # positive link angle swings the jaw outward on both sides
-        tip_y, tip_z = -s * tip_in, tip_down
-        return (f'<body name="jaw_{side}" pos="{fmt(0, s * g_u, g_v)}">'
+        if inline:
+            pivot, axis, tip = (s * g_u, 0, g_v), fmt(0, s, 0), (-s * tip_in, 0, tip_down)
+            pad_pos, pad_size = (tip[0] + s * pad_t / 2, 0, tip_down), (pad_t / 2, 0.008, pad_h / 2)
+            finger_end = (tip[0] + s * 0.005, 0, tip_down)
+        else:
+            pivot, axis, tip = (0, s * g_u, g_v), fmt(-s, 0, 0), (0, -s * tip_in, tip_down)
+            pad_pos, pad_size = (0, tip[1] + s * pad_t / 2, tip_down), (0.008, pad_t / 2, pad_h / 2)
+            finger_end = (0, tip[1] + s * 0.005, tip_down)
+        return (f'<body name="jaw_{side}" pos="{fmt(*pivot)}">'
                 f'<joint name="{"S6" if side == "left" else "S6_right"}" type="hinge" axis="{axis}" damping="0.002" range="{fmt(g_lo - 3, g_hi + 3)}" frictionloss="0.005"/>'
                 f'<geom name="link_{side}" type="capsule" fromto="0 0 0 0 0 {g_l}" size="0.004" mass="0.004" rgba="0.14 0.16 0.19 1" {ARM}/>'
                 f'<body name="finger_{side}" pos="{fmt(0, 0, g_l)}">'
                 f'<joint name="finger_{side}" type="hinge" axis="{axis}" damping="0.002" range="{fmt(-g_hi - 3, -g_lo + 3)}"/>'
-                f'<geom name="finger_{side}" type="capsule" fromto="0 0 0 {fmt(0, tip_y + s * 0.005, tip_z)}" size="0.004" mass="0.006" rgba="0.14 0.16 0.19 1" {ARM}/>'
-                f'<geom name="pad_{side}" type="box" pos="{fmt(0, tip_y + s * pad_t / 2, tip_z)}" size="{fmt(0.008, pad_t / 2, pad_h / 2)}" mass="0.001" rgba="0.9 0.9 0.9 1" {PAD} friction="{fmt(*physics["friction"])}"/>'
-                f'<site name="pad_{side}" pos="{fmt(0, tip_y, tip_z)}" size="0.002" rgba="1 0 0 0"/>'
+                f'<geom name="finger_{side}" type="capsule" fromto="0 0 0 {fmt(*finger_end)}" size="0.004" mass="0.006" rgba="0.14 0.16 0.19 1" {ARM}/>'
+                f'<geom name="pad_{side}" type="box" pos="{fmt(*pad_pos)}" size="{fmt(*pad_size)}" mass="0.001" rgba="0.9 0.9 0.9 1" {PAD} friction="{fmt(*physics["friction"])}"/>'
+                f'<site name="pad_{side}" pos="{fmt(*tip)}" size="0.002" rgba="1 0 0 0"/>'
                 f'</body></body>')
 
     mesh_assets = ''.join(
@@ -131,6 +153,9 @@ def build_xml(robot, scene, cameras=None):
         lo, hi = sorted(cal.angle(channel, b) for b in BOUNDS[channel])
         return f'range="{fmt(lo - 2, hi + 2)}" frictionloss="{friction}"'
     g_lo, g_hi = sorted((gripper['closed_angle'], gripper['open_angle']))
+    # The base plate is where the gripper rests in PARK. Its top is set to the lowest pad point of
+    # the PARK pose, so the pads rest on it instead of pressing into it.
+    plate_t = max(plate_t, rest_height(robot, cal, inline))
 
     return f'''<mujoco model="arm_sandbox">
   <compiler angle="degree" autolimits="true"/>
@@ -179,7 +204,7 @@ def build_xml(robot, scene, cameras=None):
             <body name="flange" pos="0 0 {fmt(l3)}">
               <joint name="S5" axis="0 0 1" {limits(4)}/>
               <site name="flange" size="0.003" rgba="0 1 0 0"/>
-              <geom name="gripper_base" type="box" pos="0 0 {fmt(gripper['base_plate_height'] / 2)}" size="{fmt(0.006, gripper['base_plate_width'] / 2, gripper['base_plate_height'] / 2)}" mass="0.03" rgba="0.14 0.16 0.19 1" {ARM}/>
+              <geom name="gripper_base" type="box" pos="0 0 {fmt(gripper['base_plate_height'] / 2)}" size="{fmt(gripper['base_plate_width'] / 2, 0.006, gripper['base_plate_height'] / 2) if inline else fmt(0.006, gripper['base_plate_width'] / 2, gripper['base_plate_height'] / 2)}" mass="0.03" rgba="0.14 0.16 0.19 1" {ARM}/>
               {jaw('left')}
               {jaw('right')}
             </body>

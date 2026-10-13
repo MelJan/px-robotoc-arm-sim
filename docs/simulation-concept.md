@@ -418,8 +418,9 @@ The tested robot-arm commit is recorded, so an API change there is noticed.
 What was built follows sections 3 to 8. Deviations and decisions made during the build:
 
 - **`move_pose` exists in the sandbox.** `armsim/session.py` subclasses robot-arm's `Session` and adds it; the launcher registers `POST /api/move_pose`. The client still falls back to single-joint moves when a server lacks the route, so the same text interface works against the Pi today.
-- **The gripper jaws open across the arm plane** at S5 = 480. With jaws opening in the arm plane, the tilted PARK pose put one pad 10 mm into the table. This is an assumption about S5's zero, not a measurement.
-- **S4's HOME angle is assumed 95°, not 90°.** With 90° the PARK pose pressed the pads 5 mm into the table and the servos jammed the arm against table friction, exactly as real servos would. With 95° the pads rest on the base plate in PARK.
+- **The gripper jaws open in the arm plane** at S5 = 480 (`gripper.pads_axis: x`), as in every photo of the arm. The axis is a config switch; `y` opens them across the arm plane.
+- **S4's HOME angle is assumed 105°, not 90°.** With 90° the PARK pose pressed the pads into the table and the servos jammed the arm against table friction, exactly as real servos would. With 105° the lowest pad of the tilted PARK gripper rests on the base plate; the plate's top is derived from that pad height in the model builder (`rest_height`).
+- **A three.js view** (`web/arm3d.html`) draws the arm from primitives to look like the kit and follows the same API; without an API it runs standalone with sliders and its own minimal block physics (`web/arm3d-core.js`, tested with node). Against the sandbox it shows the MuJoCo block positions.
 - **Base position 40 mm inside the near edge**, from the calibration image, as the single number `base.x` in `scene.yaml`.
 - **Slot layout:** slots stay out of the corridor the arm sweeps during PARK/HOME transitions and at least 50 mm apart, because the open gripper spans about 62 mm over the fingers.
 - **The task layer lifts before it travels.** HOME is low (the pad bottoms about 22 mm above the table), so every pick and the return to HOME go through a waypoint at travel height.
@@ -427,4 +428,4 @@ What was built follows sections 3 to 8. Deviations and decisions made during the
 - **Camera fit:** the real camera is fitted from robot-arm's calibration record with 2,9 px RMS over the six markers; it stands about 52 cm from the arm at 31 cm height, looking back at the arm.
 - **The real HC-SR04 and OAK hardware routes** are untouched: distance stays disabled, the camera service is fed by the renderer.
 
-Test suite: 58 tests, about two minutes, including an HTTP end-to-end run of a pick and place through the text interface and a demo import and playback.
+Test suite: 63 tests, about two minutes, including an HTTP end-to-end run of a pick and place through the text interface and a demo import and playback.

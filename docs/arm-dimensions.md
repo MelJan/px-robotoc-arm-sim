@@ -117,7 +117,7 @@ Gripper-local coordinates: u to the side, v down from the flange, in cm.
 |------|-------|
 | Base plate | about 6,4 wide, 2,4 high |
 | Gear centres | u = ±0,85, v = 1,4 |
-| Outer link pivots | u = ±2,2, v = 1,9 |
+| Outer link pivots | u = ±1,6, v = 1,7 (from the gripper photo; not used by the physics) |
 | Link length, both links | 3,5 |
 | Pad contact point relative to the gear-link end | 1,52 inward, 6,66 down |
 | Pad size | 1,2 high, about 0,27 thick |

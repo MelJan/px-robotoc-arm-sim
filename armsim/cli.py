@@ -14,15 +14,18 @@ from armsim.client import ArmError, HttpArmClient
 from armsim.config import ROOT, load_robot, load_scene
 from armsim.replay import import_demo, read_pose_log, replay_pose_log, run_demo
 from armsim.robotarm import BOUNDS, DemoStore
-from armsim.tasks import HttpWorld, PickPlace
+from armsim.tasks import HttpWorld, ManualWorld, PickPlace
 
 HELP = """commands:
-  power on | power off | stop            session control (power on confirms PARK on your behalf)
+  power on | power off | stop            session control; on a hardware target "power on" asks for the PARK confirmation
+  power on confirmed                      scripted form of that confirmation (hardware only)
   move S2 450      jog S3 + | jog S3 -   one joint (S1..S6 or channel 0..5)
   pose 320 427 403 220 480 650 [speed]   all six joints (move_pose, or single joints as fallback)
   home | park      speed N               named poses; demo speed in counts/s
-  state | blocks | reset                  status; sandbox blocks; blocks back to their slots
+  state | blocks | reset                  status; block positions; sandbox blocks back to their slots
+  blocks set red 0.110 0.110 [yaw]        tell the task layer where a block is (real arm: measure on the printed grid)
   pick red | place T2 | run red T2        task layer (needs block positions from /sim/blocks)
+  stack yellow red                        pick one block and set it down on another
   demo import FILE | demo load NAME | demo run | demo next | demo pause | demo list
   snapshot [CAMERA] [FILE]                render an image (sandbox) or fetch the camera (real arm)
   log FILE | replay FILE                  save the pose log; replay a pose log
@@ -38,12 +41,34 @@ def channel_of(token):
     raise ArmError(f'Unknown joint {token}')
 
 
+class FallbackWorld:
+    """Block positions from /sim/blocks when the target has it, otherwise the operator's entries."""
+
+    def __init__(self, http, manual):
+        self.http, self.manual = http, manual
+
+    def blocks(self):
+        try:
+            return self.http.blocks()
+        except ArmError:
+            if not self.manual.poses:
+                raise ArmError('This target has no block positions; enter them with "blocks set NAME X Y [YAW]"')
+            return self.manual.blocks()
+
+    def moved(self, *args):
+        self.manual.moved(*args)
+
+    def settle(self, seconds=0.5):
+        self.http.settle(seconds)
+
+
 class Shell:
-    def __init__(self, target, out=sys.stdout):
+    def __init__(self, target, out=sys.stdout, interactive=False):
         self.client = HttpArmClient(target)
-        self.target, self.out = target, out
+        self.target, self.out, self.interactive = target, out, interactive
         self.robot, self.scene = load_robot(), load_scene()
-        self.task = PickPlace(self.client, HttpWorld(self.client), self.robot, self.scene, BOUNDS)
+        self.manual = ManualWorld(self.scene)
+        self.task = PickPlace(self.client, FallbackWorld(HttpWorld(self.client), self.manual), self.robot, self.scene, BOUNDS)
         self.log = self.task.log
         self.demo_store = DemoStore(ROOT / 'artifacts' / 'demos', 'synthetic', BOUNDS)
 
@@ -70,6 +95,8 @@ class Shell:
         if command == 'help':
             self.say(HELP)
         elif command == 'power' and args[:1] == ['on']:
+            if c.state()['mode'] == 'hardware' and not self.confirm_hardware(args[1:2] == ['confirmed']):
+                return True
             c.power_on()
             self.say('powering on: PARK, then HOME')
             c.wait_idle()
@@ -111,8 +138,11 @@ class Shell:
                                          grasp_point=[round(v, 4) for v in sim['grasp_point']], pad_gap=round(sim['pad_gap'], 4), held=sim['held'])))
             except ArmError:
                 pass
+        elif command == 'blocks' and args[:1] == ['set']:
+            self.manual.set(args[1], float(args[2]), float(args[3]), float(args[4]) if len(args) > 4 else 0.0)
+            self.say(f'{args[1]} at x={float(args[2]):.3f} y={float(args[3]):.3f}')
         elif command == 'blocks':
-            for name, info in c.sim('blocks').items():
+            for name, info in self.task.world.blocks().items():
                 self.say(f'{name:7s} x={info["x"]:.3f} y={info["y"]:.3f} z={info["z"]:.3f} yaw={info["yaw"]:.0f}')
         elif command == 'reset':
             c.sim('reset', {})
@@ -126,6 +156,9 @@ class Shell:
         elif command == 'run':
             self.task.run(args[0], args[1])
             self.say(f'{args[0]} moved to {args[1]}, back at HOME')
+        elif command == 'stack':
+            self.task.stack(args[0], args[1])
+            self.say(f'{args[0]} stacked on {args[1]}, back at HOME')
         elif command == 'demo':
             self.demo(args)
         elif command == 'snapshot':
@@ -188,13 +221,34 @@ class Shell:
         path.write_bytes(data)
         self.say(f'saved {path}')
 
+    def confirm_hardware(self, scripted_confirmation):
+        """robot-arm's power_on enables the servos at PARK: on hardware that needs an attending operator."""
+        if scripted_confirmation:
+            self.say('HARDWARE: PARK confirmed by the script')
+            return True
+        if not self.interactive:
+            self.say('refused: hardware target; write "power on confirmed" once the arm is physically in PARK, supported, and the servo power switch is within reach')
+            return False
+        answer = input('HARDWARE: is the arm physically in PARK, supported, and the servo power switch within reach? Type yes: ')
+        if answer.strip().lower() != 'yes':
+            self.say('aborted')
+            return False
+        return True
+
     def record(self, label, speed=None):
         commands = self.client.commands()
         if all(commands.get(c) is not None for c in range(6)):
             self.log.append(dict(label=label, counts=[commands[c] for c in range(6)], speed=speed or 20, t=time.time()))
 
     def repl(self):
-        self.say(f'arm shell against {self.target}; type help')
+        self.interactive = True
+        try:
+            mode = self.client.state()['mode']
+        except ArmError as error:
+            mode = f'unreachable ({error})'
+        self.say(f'arm shell against {self.target} [{mode}]; type help')
+        if mode == 'hardware':
+            self.say('This is the REAL ARM. Keep the servo power switch within reach; "stop" cuts the outputs.')
         while True:
             try:
                 line = input('arm> ')

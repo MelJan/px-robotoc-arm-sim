@@ -38,6 +38,38 @@ class HttpWorld:
         time.sleep(seconds)
 
 
+class ManualWorld:
+    """Block positions typed in by the operator, for a target without /sim/blocks: the real arm.
+
+    Positions are in the table frame of the printed reference sheet, metres, yaw in degrees.
+    The task layer updates them after every set-down, so a sequence of picks stays consistent.
+    """
+
+    def __init__(self, scene):
+        self.scene = scene
+        self.specs = {b['name']: b for b in scene['blocks']}
+        self.poses = {}
+
+    def set(self, name, x, y, yaw=0.0, centre_z=None):
+        spec = self.specs[name]
+        height = spec['size'] if spec['kind'] == 'cube' else spec['height']
+        self.poses[name] = (float(x), float(y), height / 2 if centre_z is None else float(centre_z), float(yaw))
+
+    def blocks(self):
+        result = {}
+        for name, (x, y, centre, yaw) in self.poses.items():
+            spec = self.specs[name]
+            z = centre if spec['kind'] == 'cube' else centre - spec['height'] / 2
+            result[name] = _block_info(spec, (x, y, z), yaw)
+        return result
+
+    def moved(self, name, x, y, centre_z, yaw):
+        self.poses[name] = (x, y, centre_z, yaw)
+
+    def settle(self, seconds=0.5):
+        time.sleep(seconds)
+
+
 def _block_info(spec, pos, yaw):
     if spec['kind'] == 'cube':
         width, height, centre = spec['size'], spec['size'], float(pos[2])
@@ -111,23 +143,44 @@ class PickPlace:
         self.held = dict(block, name=name, gap=gap_hold)
         return self.held
 
+    def place_on(self, base_name):
+        """Set the held block down on top of another block."""
+        if self.held is None:
+            raise ValueError('Nothing is held')
+        block = self.held
+        base = self.world.blocks()[base_name]
+        if base_name == block['name']:
+            raise ValueError('A block cannot be stacked on itself')
+        top = base['z'] + base['height'] / 2
+        self._set_down(block, (base['x'], base['y']), top + block['height'] / 2, base['yaw'], f'on {base_name}')
+
     def place(self, slot_name):
         if self.held is None:
             raise ValueError('Nothing is held')
         block, slot = self.held, self.scene['slots'][slot_name]
-        yaw, sym = slot.get('yaw', 0), block['symmetry']
-        target = (slot['x'], slot['y'], block['z'] + 0.002)
-        above = (slot['x'], slot['y'], block['z'] + self.task['safe_height'])
+        self._set_down(block, (slot['x'], slot['y']), block['z'], slot.get('yaw', 0), slot_name)
+
+    def _set_down(self, block, xy, centre_z, yaw, where):
+        sym = block['symmetry']
+        target = (xy[0], xy[1], centre_z + 0.002)
+        above = (xy[0], xy[1], centre_z + self.task['safe_height'])
         width = block['width']
         travel = self.kin.inverse_counts(above, width, yaw, sym)
         travel[5] = self.kin.gripper_count_for_gap(block['gap'])
-        self._go(f'carry {block["name"]} above {slot_name}', travel, self.task['travel_speed'])
+        self._go(f'carry {block["name"]} above {where}', travel, self.task['travel_speed'])
         lower = self.kin.inverse_counts(target, width, yaw, sym)
         lower[5] = travel[5]
-        self._go(f'lower {block["name"]} onto {slot_name}', lower, self.task['approach_speed'])
+        self._go(f'lower {block["name"]} {where}', lower, self.task['approach_speed'])
         self._grip(f'release {block["name"]}', OPEN_GAP, lower)
-        self._go(f'retreat from {slot_name}', self._pose(above, OPEN_GAP, yaw, sym), self.task['approach_speed'])
+        self._go(f'retreat from {where}', self._pose(above, OPEN_GAP, yaw, sym), self.task['approach_speed'])
+        if hasattr(self.world, 'moved'):
+            self.world.moved(block['name'], xy[0], xy[1], centre_z, yaw)
         self.held = None
+
+    def stack(self, name, base_name):
+        self.pick(name)
+        self.place_on(base_name)
+        self.home()
 
     def home(self):
         self._rise('rise before home')

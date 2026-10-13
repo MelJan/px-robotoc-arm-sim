@@ -125,3 +125,155 @@ def test_demo_import_and_playback_through_the_text_interface(served, tmp_path):
     assert 'imported as' in text and 'Wave (imported from wave.json' in text and 'demo finished' in text
     assert shell.client.commands()[0] == 380
     assert shell.client.state()['demo']['status'] == 'complete'
+
+
+def test_the_3d_view_is_served_with_its_scripts(served):
+    sandbox, base = served
+    for path, needle in (('/arm3d', b'<canvas id="view">'), ('/arm3d.js', b"import * as THREE from 'three'"),
+                         ('/arm3d-core.js', b'export class World'), ('/arm3d-config.js', b'export const CONFIG'),
+                         ('/vendor/three.module.js', b"REVISION = '170'"), ('/vendor/OrbitControls.js', b'OrbitControls'),
+                         ('/vendor/RoomEnvironment.js', b'RoomEnvironment')):
+        with urlopen(f'{base}{path}', timeout=10) as response:
+            body = response.read()
+            assert response.status == 200 and needle in body, path
+            assert 'javascript' in response.headers['Content-Type'] or path == '/arm3d'
+
+
+def test_web_proxy_forwards_api_calls_to_the_arm(served):
+    import threading
+    from armsim.web import serve
+    sandbox, base = served
+    proxy = serve(0, '127.0.0.1', base)
+    thread = threading.Thread(target=proxy.serve_forever, daemon=True)
+    thread.start()
+    try:
+        via = f'http://127.0.0.1:{proxy.server_address[1]}'
+        with urlopen(f'{via}/arm3d', timeout=10) as response:
+            assert b'<canvas id="view">' in response.read()
+        with urlopen(f'{via}/api/state', timeout=10) as response:
+            assert json.load(response)['mode'] == 'preview'
+        client = HttpArmClient(via)                       # the same client, through the proxy
+        client.settings(demo_speed=50)
+        assert client.state()['settings']['demo_speed'] == 50
+        with pytest.raises(ArmError):
+            client.settings(demo_speed=500)               # refusals pass through with their message
+        with urlopen(f'{via}/sim/blocks', timeout=10) as response:
+            assert 'red' in json.load(response)
+    finally:
+        proxy.shutdown()
+        proxy.server_close()
+
+
+def test_shell_refuses_power_on_against_hardware_without_confirmation(served):
+    sandbox, base = served
+    out = io.StringIO()
+    shell = Shell(base, out=out)
+    real_state = shell.client.state
+    shell.client.state = lambda: dict(real_state(), mode='hardware')
+    calls = []
+    shell.client.power_on = lambda: calls.append('power_on')
+    shell.run_line('power on')
+    assert calls == [] and 'power on confirmed' in out.getvalue()
+    shell.run_line('power on confirmed')
+    assert calls == ['power_on']
+
+
+def test_shell_uses_typed_block_positions_when_the_target_has_none(served):
+    sandbox, base = served
+    out = io.StringIO()
+    shell = Shell(base, out=out)
+    shell.task.world.http.blocks = lambda: (_ for _ in ()).throw(ArmError('Unknown path'))
+    shell.run_line('blocks')
+    assert 'blocks set' in out.getvalue()
+    shell.run_line('blocks set red 0.110 0.110')
+    shell.run_line('blocks')
+    assert 'red     x=0.110 y=0.110 z=0.013' in out.getvalue()
+
+
+
+def _post(base, path, body, expect=200):
+    from urllib.request import Request
+    request = Request(f'{base}{path}', data=json.dumps(body).encode(), method='POST', headers={'Content-Type': 'application/json', 'Origin': base})
+    try:
+        with urlopen(request, timeout=10) as response:
+            assert response.status == expect
+            return json.load(response)
+    except HTTPError as error:
+        assert error.code == expect, error.read()
+        raise ArmError(json.load(error).get('error'))
+
+
+def _wait_move(base, timeout=120):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with urlopen(f'{base}/move_to/status', timeout=10) as response:
+            status = json.load(response)
+        if not status['running']:
+            return status
+        time.sleep(0.5)
+    raise AssertionError('move did not finish')
+
+
+def test_move_to_lowers_the_open_gripper_at_the_requested_point(served):
+    sandbox, base = served
+    client = HttpArmClient(base)
+    if not client.state()['armed']:
+        client.power_on()
+        client.wait_idle()
+    client.sim('reset', {})
+    before = client.commands()
+    with pytest.raises(ArmError):                                   # outside the table
+        _post(base, '/move_to', dict(x=0.5, y=0.0), expect=400)
+    with pytest.raises(ArmError):                                   # out of reach
+        _post(base, '/move_to', dict(x=0.33, y=0.0), expect=400)
+    assert client.commands() == before
+    _post(base, '/move_to', dict(x=0.19, y=-0.02, z=0.02, path='safe'))
+    status = _wait_move(base)
+    assert status['done'] and status['error'] is None, status
+    assert [e['label'] for e in status['log']][-2:] == ['travel above target', 'lower']
+    time.sleep(0.5)
+    grasp = np.array(sandbox.physics.grasp_point())
+    assert np.linalg.norm(grasp - (0.19, -0.02, 0.02)) < 0.004
+    assert sandbox.physics.pad_gap() == pytest.approx(0.045, abs=0.002)
+
+
+def test_proxy_serves_move_to_for_a_target_without_it(served):
+    import threading
+    from armsim.web import Handler, serve
+    sandbox, base = served
+    client = HttpArmClient(base)
+    if not client.state()['armed']:
+        client.power_on()
+        client.wait_idle()
+    proxy = serve(0, '127.0.0.1', base)
+    threading.Thread(target=proxy.serve_forever, daemon=True).start()
+    try:
+        via = f'http://127.0.0.1:{proxy.server_address[1]}'
+        _post(via, '/move_to', dict(x=0.15, y=0.08, z=0.03, lower=False))          # direct by default
+        status = _wait_move(via)
+        assert status['done'] and status['error'] is None, status
+        assert [e['label'] for e in status['log']] == ['go above target']
+        time.sleep(0.5)
+        grasp = np.array(sandbox.physics.grasp_point())
+        assert np.linalg.norm(grasp[:2] - (0.15, 0.08)) < 0.004 and grasp[2] > 0.06
+    finally:
+        proxy.shutdown()
+        proxy.server_close()
+        for cls in Handler.__subclasses__():
+            cls.mover = None
+
+
+def test_move_to_dry_run_returns_the_poses_without_moving(served):
+    sandbox, base = served
+    client = HttpArmClient(base)
+    if not client.state()['armed']:
+        client.power_on()
+        client.wait_idle()
+    before = client.commands()
+    result = _post(base, '/move_to', dict(x=0.17, y=0.05, z=0.02, dry=True))['result']
+    assert [s['label'] for s in result['steps']] == ['go to target']
+    safe = _post(base, '/move_to', dict(x=0.17, y=0.05, z=0.02, dry=True, path='safe'))['result']
+    assert [s['label'] for s in safe['steps']][-2:] == ['travel above target', 'lower']
+    assert all(len(s['counts']) == 6 for s in result['steps'])
+    time.sleep(0.3)
+    assert client.commands() == before

@@ -122,3 +122,35 @@ def test_task_tolerates_small_calibration_offsets(world, monkeypatch):
     pos, _ = block_pose(physics, 'green')
     assert np.linalg.norm(pos[:2] - (slot['x'], slot['y'])) < 12 * MM
     assert physics.body_up('green') > 0.99
+
+
+def test_yellow_is_stacked_on_red(world):
+    task, client, physics, scene = world
+    red, _ = block_pose(physics, 'red')
+    task.stack('yellow', 'red')
+    physics.step(2.0)
+    yellow, yaw = block_pose(physics, 'yellow')
+    red2, _ = block_pose(physics, 'red')
+    assert np.linalg.norm(yellow[:2] - red2[:2]) < 5 * MM
+    assert yellow[2] == pytest.approx(0.0265 * 1.5, abs=1.5 * MM)
+    assert np.linalg.norm(red2 - red) < 2 * MM
+    assert physics.body_up('yellow') > 0.99 and abs(((yaw + 45) % 90) - 45) < 10
+    assert client.commands() == HOME
+
+
+def test_stacking_works_from_typed_block_positions(world, scene):
+    """The real arm has no /sim/blocks: the operator types the positions, the physics checks them."""
+    from armsim.tasks import ManualWorld
+    task, client, physics, scene = world
+    manual = ManualWorld(scene)
+    manual.settle = lambda seconds=0.5: physics.step(seconds)
+    for name in ('red', 'yellow'):
+        slot = scene['slots'][scene['layout'][name]]
+        manual.set(name, slot['x'], slot['y'], slot.get('yaw', 0))
+    task.world = manual
+    task.stack('yellow', 'red')
+    physics.step(2.0)
+    yellow, _ = block_pose(physics, 'yellow')
+    red, _ = block_pose(physics, 'red')
+    assert np.linalg.norm(yellow[:2] - red[:2]) < 5 * MM and yellow[2] == pytest.approx(0.0265 * 1.5, abs=1.5 * MM)
+    assert manual.blocks()['yellow']['z'] == pytest.approx(0.0265 * 1.5, abs=1e-6)   # bookkeeping follows the move

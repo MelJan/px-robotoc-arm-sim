@@ -14,14 +14,15 @@ gripper:
   link_length: 0.035
   gear_u: 0.0085
   gear_v: 0.014
-  outer_u: 0.022
-  outer_v: 0.019
+  outer_u: 0.016            # second link pivot, 7.5 mm outside the gear (visual model only)
+  outer_v: 0.017
   tip_inward: 0.01515      # pad contact point relative to the gear link end, inward
   tip_down: 0.06664        # pad contact point relative to the gear link end, down
   pad_height: 0.012
   pad_thickness: 0.0027
   base_plate_width: 0.064
   base_plate_height: 0.024
+  pads_axis: y             # y: jaws open across the arm plane, confirmed on the real arm 2026-10-13; x: in the arm plane
   open_angle: 56.4         # link angle from the down axis when fully open (tip gap 45 mm)
   closed_angle: 11.0       # link angle when closed (pads touch)
   open_count: 650          # team measurement: "max grip" 650 is the widest opening
@@ -47,12 +48,12 @@ link_mass: 0.03            # each bracket or tube
 # Angle conventions: S1 yaw counter-clockwise seen from above (0 = toward the table, +X);
 # S2 lean forward from vertical; S3 bend down relative to the upper arm;
 # S4 flex down relative to the forearm (90 = gripper straight down when the forearm is level);
-# the HOME gripper is assumed 5° past vertical so that the PARK pose rests on the base plate;
+# the HOME gripper is assumed 15° past vertical so that the PARK pose rests on the base plate;
 # S5 roll about the wrist link.
 channels:
   0: {name: S1 base rotation, home_count: 320, counts_per_degree: 3.06, direction: -1, home_angle: 0}
   1: {name: S2 shoulder,      home_count: 427, counts_per_degree: 2.44, direction: -1, home_angle: 20}
   2: {name: S3 elbow,         home_count: 403, counts_per_degree: 2.67, direction: 1,  home_angle: 70}
-  3: {name: S4 wrist flexion, home_count: 220, counts_per_degree: 2.78, direction: -1, home_angle: 95}   # 95 rather than 90: with 90 the pads would sit 5 mm inside the table in PARK
+  3: {name: S4 wrist flexion, home_count: 220, counts_per_degree: 2.78, direction: -1, home_angle: 105}  # 105 rather than 90: lets the tilted PARK gripper rest its pads on the base plate instead of inside the table
   4: {name: S5 wrist rotation, home_count: 480, counts_per_degree: 2.56, direction: -1, home_angle: 0}
   5: {name: S6 gripper}      # mapped through gripper.open_count / closed_count

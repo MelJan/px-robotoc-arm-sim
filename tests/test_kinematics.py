@@ -64,7 +64,8 @@ def test_long_blocks_repeat_every_180_degrees_and_stay_inside_the_servo_bounds(k
     counts = kin.inverse_counts((0.21, 0.05, 0.014), gap=0.012, block_yaw=90, symmetry=180)
     assert BOUNDS[4][0] <= counts[4] <= BOUNDS[4][1]
     angles = kin.calibration.angles(counts)
-    pad_axis = angles[0] + 90 - angles[4]                 # direction along which the pads separate
+    offset = 90 if kin.g.get('pads_axis', 'x') == 'y' else 0
+    pad_axis = angles[0] + offset - angles[4]             # direction along which the pads separate
     assert abs(((pad_axis - 0 + 90) % 180) - 90) < 1       # across the 12 mm depth of a block at yaw 90
 
 
