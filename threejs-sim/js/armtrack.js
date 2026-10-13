@@ -64,7 +64,7 @@ export const projectBoard = (cal, P, d = MAT.sToEdge) => project(cal, boardToTab
  * Tag corners in an image (ImageData), trying a few threshold settings like OpenCV does.
  * Returns { [id]: { corners: [[u,v] x 4], centre: [u,v] } } for the arm tags found.
  */
-export function detectArmTags(img, ids = ARM_TAGS.filter(t => t.id != null).map(t => t.id), { roi = null, zoom = 2 } = {}) {
+export function detectArmTags(img, ids = ARM_TAGS.filter(t => t.id != null).map(t => t.id), { roi = null, zoom = 2, full = true } = {}) {
   const out = {};
   // small tags (under about 25 px) read better enlarged: first search a 2x crop around the arm
   if (roi) {
@@ -75,7 +75,8 @@ export function detectArmTags(img, ids = ARM_TAGS.filter(t => t.id != null).map(
         out[id] = { corners: t.corners.map(([x, y]) => [x0 + (x + 0.5) / zoom - 0.5, y0 + (y + 0.5) / zoom - 0.5]), centre: [x0 + (t.centre[0] + 0.5) / zoom - 0.5, y0 + (t.centre[1] + 0.5) / zoom - 0.5] };
     }
   }
-  for (const [window, offset] of [[15, 3], [31, 7], [31, 3], [61, 7]]) {
+  // the whole image at a few threshold settings (left out with full: false, when the crop is enough)
+  if (full) for (const [window, offset] of [[15, 3], [31, 7], [31, 3], [61, 7]]) {
     const { markers } = detectMarkers(img, { family: '36h11', ids, window, offset, maxArea: img.width * img.height / 4 });
     for (const [id, q] of Object.entries(markers)) if (!out[id]) {
       out[id] = { corners: q, centre: lineIntersection(q[0], q[2], q[1], q[3]) };   // diagonals meet at the projected centre

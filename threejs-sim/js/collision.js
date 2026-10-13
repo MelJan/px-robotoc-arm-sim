@@ -161,8 +161,10 @@ export function armShapes(f, gap) {
   add('wrist bracket', LINK.wrist, boxInFrame(f.wrist, [0, 0, 1.4], [2.9, 1.3, 1.3]));
   add('S5 servo', LINK.wrist, boxInFrame(f.wrist, [1.035, 0, ARM.L4 - 2.335], [2.04, 0.99, 1.84]));
   // Gripper base plate with the gears, and the S6 servo behind it.
-  add('gripper plate', LINK.hand, boxInFrame(f.hand, [0, 0, 1.25], [GRIPPER.plate.w / 2, 0.65, 0.95]));
-  add('S6 servo', LINK.hand, boxInFrame(f.hand, [GRIPPER.gear[0] + 1.035, -2.635, GRIPPER.gear[1]], [2.04, 1.84, 0.99]));
+  const pz0 = 0.3, pz1 = GRIPPER.gear[1] + 1.35;   // plate: from the flange down past the gears
+  add('gripper plate', LINK.hand, boxInFrame(f.hand, [0, 0, (pz0 + pz1) / 2], [GRIPPER.plate.w / 2, 0.65, (pz1 - pz0) / 2]));
+  // S6 body: shaft on the -X gear, 4,07 x 3,72 x 1,97 reaching toward -X and -Y (model/gripper.js)
+  add('S6 servo', LINK.hand, boxInFrame(f.hand, [-GRIPPER.gear[0] - 1.035, GRIPPER.s6ShaftY - 1.86, GRIPPER.gear[1]], [2.04, 1.86, 0.99]));
 
   // Fingers: links from the gear pivot, finger body down to the pad, and the pad itself.
   const th = thetaForGap(gap) * Math.PI / 180;

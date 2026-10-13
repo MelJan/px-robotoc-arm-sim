@@ -36,7 +36,7 @@ export function buildTag(tag) {
   return m;
 }
 
-/** A clip-on webcam looking from pos at target (board frame, cm), on top of a monitor's edge. */
+/** A clip-on webcam looking from pos at target (board frame, cm). The monitor it is clipped to is left out: it blocked the view. */
 export function buildWebcam(M, pos, target) {
   const g = new THREE.Group();
   const head = new THREE.Group();
@@ -45,11 +45,5 @@ export function buildWebcam(M, pos, target) {
   head.position.set(...pos);
   head.quaternion.setFromUnitVectors(V(0, 1, 0), V(...target).sub(V(...pos)).normalize());
   g.add(head);
-  // the monitor's top edge under the clip, roughly (photos/setup-two-cameras-*.jpg)
-  const mon = box(55, 2.5, 34, M.camBody, 0.3);
-  const away = V(...pos).sub(V(...target)).setZ(0).normalize();
-  mon.position.set(pos[0] + away.x * 2.5, pos[1] + away.y * 2.5, pos[2] - 18.5);
-  mon.rotation.z = Math.atan2(-away.x, away.y);                       // its thickness (local +Y) points away from the mat
-  g.add(mon);
   return g;
 }

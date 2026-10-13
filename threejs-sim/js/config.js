@@ -18,7 +18,7 @@ export const ARM = {
 export const BOARD = { w: 30, d: 38, t: 1.0, axisToBackEdge: 1.5 };
 
 // The arm's base: two U-beam brackets stacked into a box, its top plate BASE.h above the board. 3,3 cm from
-// the photos (photos/park-gripper-on-base.jpg: the drawn 2,5 was visibly too low). The S1 shaft (BASE.s1Shaft)
+// the photos (photos/park-gripper-on-base.jpg (photo removed 2026-10-13): the drawn 2,5 was visibly too low). The S1 shaft (BASE.s1Shaft)
 // and the S2 axis (ARM.H_S2) keep their heights: the S1 servo sits deeper in the base.
 export const BASE = { h: 3.3, s1Shaft: 6.42, offsetY: 2.2 };
 
@@ -28,10 +28,14 @@ export const CUBE = 2.65;
 // Fitted in docs/arm-dimensions.md so that it reproduces the measured values exactly:
 // open 10,0 / gap 4,5; holding the cube 11,0 / gap 2,65; closed 11,5 / gap 0.
 export const GRIPPER = {
-  gear: [0.85, 1.4],       // gear centre (u, v)
-  outer: [2.2, 1.9],       // outer link pivot (u, v)
+  // The gears sit on the S6 shaft, 2,48 cm below the flange: the S6 servo's top face (tag 107) is 1,5 cm below
+  // it (photos/arm-tags-106-107-109-front-s6-right*.jpg, 2026-10-13). The pads stay where they were measured
+  // (gear v + tip v = 8,064 as before).
+  gear: [0.85, 2.48],      // gear centre (u, v); the -u gear is on the S6 shaft
+  outer: [2.2, 2.98],      // outer link pivot (u, v)
   link: 3.5,               // both links
-  tip: [-1.515, 6.664],    // pad contact point relative to the gear-link end
+  tip: [-1.515, 5.584],    // pad contact point relative to the gear-link end
+  s6ShaftY: -0.62,         // S6 servo top face (shaft root), just behind the back plate
   pad: { h: 1.2, t: 0.27, w: 1.0 },
   plate: { w: 6.4, h: 2.4, t: 0.4 },
   thetaOpen: 56.4,         // link angle from vertical at S6 = 490
@@ -47,15 +51,23 @@ export const GRIPPER = {
 // "Single approach" pose puts the cube centre at 1,3 cm height, 19 cm out, gripper
 // pointing down, and PARK rests the gripper on the board. The fitted directions
 // match the controller's historical sign table (S2 -1, S3 +1, S4 -1).
+// 2026-10-13: S1..S4 qHome moved by the mean of two poses where the real arm was seen: the live tags 107/109
+// in both cameras (S1..S5 fitted to them: +5,8 / +16,5 / -24,6 / +14,2 deg) and the PARK photos (+1,5 / +6,9 /
+// -18,5 / +14,0), so about +3,5 / +11,5 / -21,5 / +14 (was 0 / 6 / 62 / 84); S2 and S3 then nudged by 1 and 0,5 deg so the taught demo
+// below still holds (grasp 1,6 cm high, tool 7 deg from vertical). Lower joints are not seen directly: S1..S3
+// is one plausible chain for the seen wrist and gripper (docs/two-camera-tracking.md, live check 2026-10-13).
 // Change them in the Calibration panel once they are measured.
 export const SERVOS = [
-  { ch: 0, name: 'S1', joint: 'Base rotation',  home: 320, park: 330, low: 90,  high: 660, cpd: 260 / 85, qHome: 0,  dir: -1 },
-  { ch: 1, name: 'S2', joint: 'Shoulder',       home: 427, park: 540, low: 185, high: 660, cpd: 220 / 90, qHome: 6,  dir: -1 },
-  { ch: 2, name: 'S3', joint: 'Elbow',          home: 403, park: 580, low: 90,  high: 660, cpd: 240 / 90, qHome: 62, dir: +1 },
-  { ch: 3, name: 'S4', joint: 'Wrist flexion',  home: 220, park: 195, low: 90,  high: 660, cpd: 250 / 90, qHome: 84, dir: -1 },
+  { ch: 0, name: 'S1', joint: 'Base rotation',  home: 320, park: 330, low: 90,  high: 660, cpd: 260 / 85, qHome: 3.5, dir: -1 },
+  { ch: 1, name: 'S2', joint: 'Shoulder',       home: 427, park: 540, low: 185, high: 660, cpd: 220 / 90, qHome: 18.5, dir: -1 },
+  { ch: 2, name: 'S3', joint: 'Elbow',          home: 403, park: 580, low: 90,  high: 660, cpd: 240 / 90, qHome: 41, dir: +1 },
+  { ch: 3, name: 'S4', joint: 'Wrist flexion',  home: 220, park: 195, low: 90,  high: 660, cpd: 250 / 90, qHome: 98, dir: -1 },
   // The live controller's HOME has S5 = 250 (docs/controller-live-2026-10-12.md).
-  // At 480 (the documented HOME) the jaws close along the arm's sideways axis.
-  { ch: 4, name: 'S5', joint: 'Wrist rotation', home: 250, park: 480, low: 90,  high: 660, cpd: 230 / 90, qHome: 90, dir: -1 },
+  // At 480 (the documented HOME, = PARK) the jaws close along the arm's sideways axis, model angle 0: the S6 servo
+  // faces the front (photos/park-front.jpg). At HOME (250) the S6 servo is on the right of the gear plate seen
+  // from the front (photos/arm-tags-106-107-109-front-s6-right*.jpg, 2026-10-13): -90, so dir +1 (was 90 / -1,
+  // which put the servo on the left at HOME).
+  { ch: 4, name: 'S5', joint: 'Wrist rotation', home: 250, park: 480, low: 90,  high: 660, cpd: 230 / 90, qHome: -90, dir: +1 },
   { ch: 5, name: 'S6', joint: 'Gripper',        home: 550, park: 650, low: 490, high: 660, cpd: null, open: 490, grip: 590, closed: 650 },
 ];
 
@@ -105,18 +117,22 @@ export const CAMERAS = [
 // the corners of 107 and 109 from both cameras, 2026-10-13). Positions come from the photos (2 to 3 mm);
 // "up" is only a first guess: the tracker finds each tag's real turn from its corners.
 export const ARM_TAGS = [
-  // Calibrated 2026-10-13 from 3 poses (2 live snapshot pairs + the close-up photos, S5 spread 120 degrees,
-  // js/jointfit.js estimateJointAxis): the layouts that make both parts turn about one S5 axis. The S5 axis
-  // came out 10,6 degrees and 0,5 cm from the model's, the circle fit 0,55 cm; the wrist+gripper pair fit
-  // dropped from 17-50 px to 3-9 px. Open: how far along the S5 axis the gripper tags sit relative to the
-  // flange is not observable from joint motion (here the gripper tags end 2,6 cm below the flange, which the
-  // photos roughly confirm, but the gripper model puts its S6 servo higher). Measure: S5 hub to tag 107 centre.
-  // wrist part (moves with S1..S4): S5 servo and its bracket
-  { key: 'wrist-s5', id: 109, link: 'wrist', centre: [1.02, -0.73, 3.98], normal: [-0.01, -1, -0.06], up: [-0.98, -0.01, 0.17], size: 1.9, on: 'S5 servo, wide face' },
-  { key: 'wrist-plate', id: 108, link: 'wrist', centre: [3.63, 0.65, 2.45], normal: [0.98, 0.01, -0.17], up: [0.17, -0.06, 0.98], size: 1.9, on: 'S5 bracket side plate, +X (horn side)' },
-  // gripper part (moves with S1..S5): S6 servo
-  { key: 'hand-top', id: 107, link: 'hand', centre: [-1.69, -0.99, 2.87], normal: [-0.09, -0.29, -0.95], up: [-0.99, 0, 0.11], size: 1.9, on: 'S6 servo, face toward the wrist' },
-  { key: 'hand-end', id: 106, link: 'hand', centre: [0.86, -0.18, 3.57], normal: [0.99, 0, -0.11], up: [0.09, 0.29, 0.95], size: 1.9, on: 'S6 servo, cable end' },
+  // Placed on the faces they sit on, from the photos (docs/two-camera-tracking.md, docs/gripper-layout.md):
+  // wrist part (moves with S1..S4): 109 on the S5 servo's wide face; 108 relative to 109 measured in
+  // photos/arm-tags-108-109-wrist-front.jpg (relative tag poses, OpenCV IPPE): on the outer face of the bracket's +X side plate
+  // (x 4,08; at 3,88 it sat inside the plate and the plate's round end covered it). Both 1,0 cm higher (toward
+  // S4) than first placed, 2026-10-13: the close-up photos/arm-tags-106-107-109-front-s6-right-close.jpg put 109
+  // 3,2 to 3,4 cm above the S5 hub, and two live captures (both cameras, tags 106 to 109) fit 9,2 -> 3,3 px with it
+  { key: 'wrist-s5', id: 109, link: 'wrist', centre: [1.035, -1.06, 3.3], normal: [0, -1, 0], up: [-1, 0, 0], size: 1.9, on: 'S5 servo, wide face' },
+  { key: 'wrist-plate', id: 108, link: 'wrist', centre: [4.08, 0.24, 2.17], normal: [1, 0, 0], up: [0, 0, 1], size: 1.9, on: 'S5 bracket side plate, +X (horn side)' },
+  // gripper part (moves with S1..S5): the S6 servo behind the gear plate, shaft on the -X gear, body reaching
+  // 4 cm toward -X, cable end at +X next to the S5 axis (model/gripper.js). Seen from the front with the gripper
+  // hanging down and the jaws closing toward the viewer, the servo is on the right of the gear plate.
+  // 107 centred on the label side that faces the wrist (1,5 cm below the flange); 106 on a clear spacer on the
+  // cable end, 2,05 cm off the S5 axis (nearer than the servo's middle) and hanging 0,5 cm below the servo's
+  // middle. Both from photos/arm-tags-106-107-109-front-s6-right*.jpg (tag poses against the S5 hub, 2026-10-13)
+  { key: 'hand-top', id: 107, link: 'hand', centre: [-1.885, -2.48, 1.5], normal: [0, 0, -1], up: [-1, 0, 0], size: 1.9, on: 'S6 servo, label side toward the wrist' },
+  { key: 'hand-end', id: 106, link: 'hand', centre: [0.6, -2.05, 2.95], normal: [1, 0, 0], up: [0, 0, 1], size: 1.9, on: 'S6 servo, cable end (on a clear spacer)' },
 ];
 /** The rigid parts that carry tags: what moves them and where their joint axis is (for the overlay). */
 export const ARM_PARTS = {

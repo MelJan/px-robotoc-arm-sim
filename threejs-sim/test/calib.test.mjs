@@ -1,7 +1,7 @@
 // node --test test/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { calibrate, homography, project, MARKER_CORNERS, SAVED_FRAME_CORNERS, markerCentre } from '../js/calib.js';
+import { calibrate, homography, project, rodrigues, rotvec, MARKER_CORNERS, SAVED_FRAME_CORNERS, markerCentre } from '../js/calib.js';
 
 const pairs = () => {
   const world = [], img = [];
@@ -42,4 +42,12 @@ test('six clicked marker centres are enough for a usable camera', () => {
   assert.ok(Math.hypot(cam.centre[0] - 480.8, cam.centre[1] + 8.3, cam.centre[2] - 371.7) < 25, `centre ${cam.centre}`);
   const p = project(cam, [175, 0, 0]);
   assert.ok(p[0] > 0 && p[0] < 1280 && p[1] > 0 && p[1] < 720);
+});
+
+test('rotvec round trip, also at 180 degrees about any axis', () => {
+  const Rs = [[[-1, 0, 0], [0, 0, -1], [0, -1, 0]], [[-1, 0, 0], [0, -1, 0], [0, 0, 1]], [[0, 1, 0], [1, 0, 0], [0, 0, -1]], [[0, 0, 1], [0, -1, 0], [1, 0, 0]]];
+  for (const R of Rs) {
+    const back = rodrigues(rotvec(R));
+    R.forEach((row, i) => row.forEach((v, j) => assert.ok(Math.abs(back[i][j] - v) < 1e-9, `R[${i}][${j}] ${back[i][j]} vs ${v}`)));
+  }
 });

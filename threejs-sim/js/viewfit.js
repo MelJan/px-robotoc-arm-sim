@@ -7,7 +7,8 @@
 // y down, z forward), p_cam = R (P - C), u = cx + f x / z, v = cy + f y / z, principal point
 // at the image centre.
 
-import { ARM, BASE, MAT } from './config.js';
+import { ARM, ARM_TAGS, BASE, MAT } from './config.js';
+import { tagAxes } from './armtrack.js';
 import { fk, point, gapForTheta, gripperTheta, thetaForGap, padDepthForTheta } from './kinematics.js';
 import { rodrigues, rotvec, solve, MARKER_CORNERS, markerCentre } from './calib.js';
 
@@ -48,6 +49,14 @@ export const KEYPOINTS = {
 for (const id of Object.keys(MARKER_CORNERS)) {
   KEYPOINTS[`m${id}`] = ['mat', [...markerCentre(id), 0]];
   MARKER_CORNERS[id].forEach((p, k) => { KEYPOINTS[`m${id}.${k}`] = ['mat', [p[0], p[1], 0]]; });
+}
+// arm tags (config.js ARM_TAGS): centre t<id> and black-square corners t<id>.<k> (TL, TR, BR, BL as printed,
+// the order OpenCV / detectArmTags return them in)
+for (const tag of ARM_TAGS) {
+  const { up, right } = tagAxes(tag), h = tag.size / 2;
+  const P = (u, v) => tag.centre.map((c, i) => c + u * right[i] + v * up[i]);
+  KEYPOINTS[`t${tag.id}`] = [tag.link, tag.centre.slice()];
+  [P(-h, h), P(h, h), P(h, -h), P(-h, -h)].forEach((p, k) => { KEYPOINTS[`t${tag.id}.${k}`] = [tag.link, p]; });
 }
 
 /** Board-frame position of a keypoint for model angles a, jaw gap and mat offset d. */

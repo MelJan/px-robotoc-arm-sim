@@ -126,7 +126,7 @@ export function buildArm(M) {
   for (const x of [-1.86, 1.86]) { screwAt(shoulder, M, V(x, 0, zMid + 0.2), V(0, 0, 1), 0.16); const n = nut(M, 0.2); n.rotation.set(0, 0, 0); at(n, x, 0, zMid - 0.3); shoulder.add(n); }
   const pin3 = cyl(0.42, 0.45, M.bearing, 'x', 24); at(pin3, -2.4, 0, ARM.L2); shoulder.add(pin3);
   // PCA9685 servo driver on a pink foam pad on the -X side plate, board facing out (-X), long side
-  // along the link (photos/pca9685-closeup.jpg, photos/pca9685-on-upper-arm.jpg, photos/park-front.jpg):
+  // along the link (photos/pca9685-closeup.jpg (photo removed 2026-10-13), photos/pca9685-on-upper-arm.jpg, photos/park-front.jpg):
   // the 16 servo headers on the back (-Y) edge with channel 0 at the bottom, the power terminal on the
   // front edge, the I2C header on the bottom edge, two zip ties around plate, foam and board.
   shoulder.add(buildPca(M));
@@ -165,8 +165,10 @@ export function buildArm(M) {
   for (const sx of [-1, 1]) { const b = bend(M, 2.5, 'y'); at(b, sx * 2.65, 0, 2.8); wrist.add(b); }
   // S5 servo between the bracket's side plates, body along X, its wide (label) faces toward +-Y
   // (photos/arm-tags-108-109-wrist-front.jpg: tag 109 on that face, tag 108 on the side plate)
-  const s5 = servo(M); at(s5, 0, 0, ARM.L4 - 0.48); wrist.add(s5);
-  for (const sx of [-1, 1]) wrist.add(sidePlate(M, 1.03 + sx * 2.95, 3.0, ARM.L4 - 1.0, 2.2, [[0, 1.5, 0.15]]));
+  // short wire stub: the +X side plate (tag 108 on it) is only 0,8 cm beyond the cable exit
+  const s5 = servo(M, { wire: 0.5 }); at(s5, 0, 0, ARM.L4 - 0.48); wrist.add(s5);
+  // the +X plate reaches up to just below the S4 horn: tag 108 sits on it (config.js ARM_TAGS)
+  for (const sx of [-1, 1]) { const z0 = sx > 0 ? 1.0 : 3.0; wrist.add(sidePlate(M, 1.03 + sx * 2.95, z0, ARM.L4 - 1.0, 2.2, [[0, 4.5 - z0, 0.15]])); }
 
   // ---- hand (flange frame, Z = tool axis)
   const hand = joint(new THREE.Group()); hand.position.z = ARM.L4; wrist.add(hand);

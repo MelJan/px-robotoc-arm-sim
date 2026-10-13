@@ -22,7 +22,7 @@ export function nut(M, s = 0.28) { const n = mesh(new THREE.CylinderGeometry(s, 
  * MG996R. Local frame: output shaft on +Z at the origin, body along +X (shaft 1,0 from the
  * near end), width along Y. Case top at z = -0.05, bottom at z = -3.72.
  */
-export function servo(M, { label = true } = {}) {
+export function servo(M, { label = true, cableAtShaft = false, wire = 0.9 } = {}) {
   const g = new THREE.Group();
   const L = 4.07, W = 1.97, xc = L / 2 - 1.0;
   const top = box(L, W, 0.75, M.servoCap, 0.08); at(top, xc, 0, -0.43); g.add(top);
@@ -40,10 +40,11 @@ export function servo(M, { label = true } = {}) {
   const spline = cyl(0.28, 0.42, M.spline, 'z', 18); at(spline, 0, 0, 0.32); g.add(spline);
   // four case screws on the bottom
   for (const [x, y] of [[-0.75, -0.7], [-0.75, 0.7], [2.8, -0.7], [2.8, 0.7]]) screwAt(g, M, V(x, y, -3.73), V(0, 0, -1), 0.11);
-  // cable exit on the far end
-  const exit = box(0.5, 0.9, 0.5, M.servo, 0.08); at(exit, L - 1.0 + 0.15, 0, -2.9); g.add(exit);
+  // cable exit on the far end, or on the shaft end
+  const ex = cableAtShaft ? -1.0 - 0.15 : L - 1.0 + 0.15, wx = cableAtShaft ? -1.0 - 0.25 - wire / 2 : L - 1.0 + 0.25 + wire / 2;
+  const exit = box(0.5, 0.9, 0.5, M.servo, 0.08); at(exit, ex, 0, -2.9); g.add(exit);
   const mats = [M.cableBrown, M.cableRed, M.cableOrange];
-  [-0.12, 0, 0.12].forEach((y, i) => { const w = cyl(0.06, 0.9, mats[i], 'x', 8); at(w, L - 1.0 + 0.7, y, -2.9); g.add(w); });
+  [-0.12, 0, 0.12].forEach((y, i) => { const w = cyl(0.06, wire, mats[i], 'x', 8); at(w, wx, y, -2.9); g.add(w); });
   if (label) {
     const lab = mesh(new THREE.PlaneGeometry(L - 0.4, 2.0), M.servoLabel, false);
     orient(lab, V(1, 0, 0), V(0, 0, 1), V(0, -1, 0)); at(lab, xc, -W / 2 - 0.004, -1.9); g.add(lab);

@@ -62,8 +62,12 @@ export function buildGripper(M) {
     for (const y of [-0.62, 0.74]) screwAt(group, M, V(sx * outer[0], y, outer[1]), V(0, Math.sign(y), 0), 0.14);
     screwAt(group, M, V(sx * gear[0], 0.74, gear[1]), V(0, 1, 0), 0.16);
   }
-  // S6 servo behind the back plate, shaft driving the right gear, body out to the side
-  const s6 = orient(servo(M), V(1, 0, 0), V(0, 0, -1), V(0, 1, 0)); at(s6, gear[0], -0.62, gear[1]); group.add(s6);
+  // S6 servo behind the back plate (photos/arm-tags-106-107-109-*.jpg, gripper-gears-closeup.jpg, docs/gripper-layout.md):
+  // shaft through the plate into the -X gear, label side up toward the wrist (tag 107), body reaching 4 cm toward
+  // -X, the cable leaving at the shaft end (+X, next to the S5 axis; tag 106 on a clear spacer there).
+  // Seen from the front with the gripper hanging down, the servo is on the right of the gear plate.
+  const s6 = orient(servo(M, { cableAtShaft: true }), V(-1, 0, 0), V(0, 0, 1), V(0, 1, 0));
+  at(s6, -gear[0], GRIPPER.s6ShaftY, gear[1]); group.add(s6);
   // gears between the plates
   const gears = [];
   for (const sx of [-1, 1]) {

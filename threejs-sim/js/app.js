@@ -5,7 +5,7 @@ import { createView } from './render.js';
 import { SERVOS, MAT, CAMERA, CAMERAS, CUBE, COLOURS, PLAN, CONTROLLER } from './config.js';
 import { calFromLookAt } from './armtrack.js';
 import { buildWebcam } from './model/tags.js';
-import { buildTagOverlay } from './tagoverlay.js';
+import { buildTagOverlay, buildSeenOverlay } from './tagoverlay.js';
 import { fk, anglesFromCounts, countsFromAngles, ikTopDown, guardViolations, camToBoard, toolYawAndTilt, Unreachable } from './kinematics.js';
 import { armShapes } from './collision.js';
 import { SimController, ControllerError } from './controller.js';
@@ -118,6 +118,9 @@ placeMatAndCamera();
 // which tag sits on which rigid part, and what moves it (toggle "Tags & parts")
 const tagOverlay = buildTagOverlay();
 tagOverlay.group.visible = false; scene.add(tagOverlay.group);
+// the tags the cameras see right now, on the arm model (while the arm is drawn at its tracked pose)
+const seenOverlay = buildSeenOverlay();
+seenOverlay.group.visible = false; scene.add(seenOverlay.group);
 
 // cubes
 const cubeMeshes = new Map();
@@ -708,7 +711,18 @@ function placeDetections(list) {
 const camTab = initCameraTab({
   scene, cals: camCals, hideForCamera, log, toast,
   armAngles: () => anglesFromCounts(ctl.commands),
-  onArmTrack: r => { trackedPose = r && $('cam-arm-ghost').checked ? r.angles : null; needsRender = true; },
+  // every tracking round: the fit (or null when this round found too few tags) and the tags each camera saw
+  onArmTrack: (r, seen, tagErr = []) => {
+    if (r) tracked = { angles: r.angles, rms: r.rms, views: r.residuals.length, free: r.free, seen, tagErr, t: Date.now(), miss: false };
+    else if (tracked) Object.assign(tracked, { seen, tagErr: [], miss: true });
+    needsRender = true;
+  },
+  clearArmTrack: () => { tracked = null; needsRender = true; },
+  onLiveStats: s => { liveStats = s; },
+  onRecalibrated: () => { placeMatAndCamera(); needsRender = true; },
+  onLive: on => { $('live-track').classList.toggle('on', on); $('live-track').textContent = on ? '● Live: stop' : '● Live tracking'; needsRender = true; },
+  // the next fit starts where the last one found the arm (the joint panel can be far from the real arm)
+  trackStart: () => tracked?.angles,
   linkBase: () => (link ? link.base : ''),
   onApply: (cal, id = 'oak') => {
     camCals[id] = cal;
@@ -749,6 +763,8 @@ const camTab = initCameraTab({
     if (changed) { renderCubes(); needsRender = true; if (serverMode()) setScene(sceneOf()).catch(() => {}); }
   },
 });
+// one click: both cameras live, the arm tracked and drawn where it really is (Camera tab: startLive)
+$('live-track').onclick = () => (camTab.live ? camTab.stopLive() : camTab.startLive());
 
 // ---------------- scenarios (scenarios.js) ----------------
 
@@ -769,7 +785,25 @@ $('sync-cams').onclick = async () => {
 
 // ---------------- main loop ----------------
 
-let trackedPose = null;
+// the real arm as the cameras see it (Camera tab → Arm tracking); while it is followed, the arm model is drawn there
+let tracked = null, liveStats = '';
+const following = () => !!tracked && $('cam-arm-ghost').checked;
+$('cam-arm-ghost').addEventListener('change', () => { needsRender = true; });
+setInterval(() => { if (following()) needsRender = true; }, 1000);   // keeps the overlay's age current
+function trackHud() {
+  const box = $('track-hud');
+  box.hidden = !following();
+  if (box.hidden) return;
+  const T = tracked, a0 = anglesFromCounts(ctl.position), s = v => (v >= 0 ? '+' : '') + v.toFixed(1);
+  const ago = (Date.now() - T.t) / 1000;
+  const perTag = {}; for (const x of T.tagErr || []) (perTag[x.id] ??= []).push(`${x.cam} ${x.err.toFixed(1)} px`);
+  box.innerHTML = `<b>${camTab.live ? 'LIVE · ' : ''}Arm drawn where the cameras see it</b><br>` +
+    Object.entries(perTag).map(([id, l]) => `tag ${id}: ${l.join(' · ')}`).join('<br>') + (Object.keys(perTag).length ? '<br>' : '') +
+    T.seen.map(c => `${c.name}: ${c.ids.length ? c.ids.length + ' tag' + (c.ids.length > 1 ? 's' : '') : 'no tags'}`).join(' · ') + '<br>' +
+    `fit ${T.rms.toFixed(1)} px over ${T.views} tag view${T.views === 1 ? '' : 's'} · ${ago < 2 ? 'now' : `${ago.toFixed(0)} s ago`}` +
+    (T.miss ? ' · <span class="miss">last round: too few tags, pose kept</span>' : '') + '<br>' +
+    (camTab.live && liveStats ? `<span style="color:var(--muted)">${liveStats}</span><br>` : '') + (onReal() ? 'tracked − real arm counts: ' : 'tracked − joint panel (simulation, not the real arm): ') + ['s1', 's2', 's3', 's4', 's5'].filter(j => T.free.includes(j)).map(j => `${j.toUpperCase()} ${s(T.angles[j] - a0[j])}°`).join(' ');
+}
 let needsRender = true, last = performance.now(), lastContacts = new Set(), eventIdx = 0, lastCubeKey = '';
 controls.addEventListener('change', () => { needsRender = true; });
 $('show-shapes').onchange = () => { needsRender = true; };
@@ -811,13 +845,14 @@ function frame(now) {
 
   if (!oakView && controls.update()) needsRender = true;
   if (needsRender) {
-    const a = anglesFromCounts(ctl.position);
+    // only one arm: where the cameras see it while tracking is followed, else the commanded (simulated) pose
+    const a = following() ? tracked.angles : anglesFromCounts(ctl.position);
     arm.setPose(a, world.gap);
     if (tagOverlay.group.visible) tagOverlay.update(a);
-    // The ghost shows the real arm only where it differs from the simulated one.
-    // the ghost shows the arm as the cameras see it (Camera tab → Arm tracking)
-    ghost.root.visible = !!trackedPose;
-    if (trackedPose) ghost.setPose(trackedPose, world.gap);
+    ghost.root.visible = false;
+    seenOverlay.group.visible = following();
+    if (following()) { const seen = {}; for (const x of tracked.tagErr || []) (seen[x.id] ??= []).push(x); seenOverlay.update(a, seen); }
+    trackHud();
     syncCubeMeshes();
     const hitNames = new Set(world.contacts.flatMap(k => [k.a, k.b]));
     updateShapes(armShapes(world.frames, world.gap), hitNames, $('show-shapes').checked);
@@ -845,4 +880,4 @@ resize();
 requestAnimationFrame(frame);
 
 // for the console and for tests
-window.sim = { ctl, world, scene, camera, controls, renderer, view, arm, camTab, get link() { return link; }, makePlan, THREE, hideForCamera, anglesFromCounts, camCals };
+window.sim = { ctl, world, scene, camera, controls, renderer, view, arm, ghost, camTab, get link() { return link; }, makePlan, THREE, hideForCamera, anglesFromCounts, camCals };

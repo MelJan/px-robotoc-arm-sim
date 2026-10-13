@@ -1,4 +1,4 @@
-// Everything around the arm: board, printed mat, desk, partition, Raspberry Pi, bench supply,
+// Everything around the arm: board, printed mat, desk, partition, Raspberry Pi,
 // ultrasonic sensor, the OAK camera on its stand, and the wooden cubes.
 
 import * as THREE from 'three';
@@ -28,8 +28,6 @@ export function buildTable(M) {
     const c = new THREE.CatmullRomCurve3([V(x, -8.0, 0.9), V(x + 0.3, -12, 1.2), V(x + 1.5, -18, 0.0), V(x + 4, -22, -0.7)]);
     g.add(mesh(new THREE.TubeGeometry(c, 40, r, 10, false), mat));
   }
-  // bench supply beside the board (photos/setup-desk-overview.jpg)
-  const psu = buildPSU(M); psu.rotation.z = 0.25; at(psu, -34, -10, -BOARD.t); g.add(psu);
 
   // HC-SR04 ultrasonic sensor on the desk behind the arm.
   const us = new THREE.Group();
@@ -112,57 +110,6 @@ export function buildPi(M) {
   // yellow tape over the jumper wires (photo)
   const tape = mesh(new THREE.CylinderGeometry(0.22, 0.22, 2.2, 12), new THREE.MeshStandardMaterial({ color: 0xe8d23a, roughness: 0.4 }));
   tape.rotation.z = Math.PI / 2 + 0.2; at(tape, -1.6, 2.0, 2.15); g.add(tape);
-  return g;
-}
-
-/**
- * Bench power supply (the team's Eventek unit, photos/setup-desk-overview.jpg): vented grey
- * steel case, cream front panel with voltage and current read-outs, two knobs, banana sockets,
- * rocker switch and rubber feet. Origin: centre of the bottom, front facing +Y.
- */
-export function buildPSU(M) {
-  const g = new THREE.Group();
-  const Wd = 13, D = 24, Hh = 15;
-  const body = new THREE.MeshPhysicalMaterial({ color: 0x6a6e74, metalness: 0.55, roughness: 0.5, clearcoat: 0.2 });
-  g.add(at(box(Wd, D, Hh, body, 0.25), 0, 0, Hh / 2 + 0.4));
-  // vent slots on both sides and on top
-  const slot = new THREE.MeshStandardMaterial({ color: 0x1b1c1f, roughness: 0.8 });
-  for (const sx of [-1, 1]) for (let i = 0; i < 9; i++) for (let j = 0; j < 2; j++) g.add(at(box(0.05, 2.8, 0.35, slot), sx * (Wd / 2 + 0.01), -7 + j * 7, 5 + i * 0.9));
-  for (let i = 0; i < 8; i++) g.add(at(box(6, 0.35, 0.05, slot), 0, -8 + i * 1.6, Hh + 0.41));
-  for (const [x, z] of [[-5.8, 1.1], [5.8, 1.1], [-5.8, 14.4], [5.8, 14.4]]) screwAt(g, M, V(x, D / 2 - 0.4, z), V(0, 1, 0), 0.18);
-  // front panel texture: displays and labels
-  const panelTex = canvasTexture(640, 740, (c, w, h) => {
-    c.fillStyle = '#e9e3d2'; c.fillRect(0, 0, w, h);
-    c.fillStyle = '#4b4f55'; c.font = 'bold 34px Arial'; c.fillText('EVENTEK', 40, 70);
-    c.font = '20px Arial'; c.fillText('DC POWER SUPPLY  KPS305D', 40, 100);
-    const disp = (y, text, label) => {
-      c.fillStyle = '#141414'; c.fillRect(40, y, 300, 110);
-      c.fillStyle = '#ff3b2a'; c.shadowColor = '#ff3b2a'; c.shadowBlur = 18; c.font = 'bold 86px "Courier New", monospace'; c.fillText(text, 60, y + 88); c.shadowBlur = 0;
-      c.fillStyle = '#4b4f55'; c.font = 'bold 22px Arial'; c.fillText(label, 350, y + 65);
-    };
-    disp(150, '05.2', 'V'); disp(300, '0.54', 'A');
-    c.font = '18px Arial'; c.fillText('VOLTAGE', 450, 200); c.fillText('CURRENT', 450, 360);
-    c.fillText('COARSE   FINE', 440, 520); c.fillText('+          -', 450, 690); c.fillText('POWER', 60, 690);
-  });
-  const panel = box(Wd - 0.4, 0.3, Hh - 0.4, M.psuFront, 0.1); at(panel, 0, D / 2 + 0.15, Hh / 2 + 0.4); g.add(panel);
-  // printed face: texture right = -X (the viewer's right when facing the front), up = +Z
-  const face = mesh(new THREE.PlaneGeometry(Wd - 0.6, Hh - 0.6), new THREE.MeshStandardMaterial({ map: panelTex, roughness: 0.55 }), false);
-  orient(face, V(-1, 0, 0), V(0, 0, 1), V(0, 1, 0)); at(face, 0, D / 2 + 0.31, Hh / 2 + 0.4); g.add(face);
-  // knobs with knurled skirts
-  const knobMat = new THREE.MeshStandardMaterial({ color: 0xd9d5cc, roughness: 0.45 });
-  for (const [x, z, r] of [[-3.7, 11.2, 0.95], [-3.7, 7.6, 0.95], [-2.3, 4.4, 0.6], [-4.9, 4.4, 0.6]]) {   // viewer's right = -X
-    const k = cyl(r, 1.1, knobMat, 'y', 32); at(k, x, D / 2 + 0.85, z); g.add(k);
-    const sk = cyl(r * 1.12, 0.3, knobMat, 'y', 24); at(sk, x, D / 2 + 0.45, z); g.add(sk);
-    const ln = box(0.08, 0.05, r * 0.8, M.chip); at(ln, x, D / 2 + 1.42, z + r * 0.45); g.add(ln);
-  }
-  // banana sockets (red +, black -) and the rocker switch
-  for (const [x, mat] of [[-2.4, M.cableRed], [-4.9, M.wireBlack]]) {
-    const b = cyl(0.42, 0.9, mat, 'y', 20); at(b, x, D / 2 + 0.6, 1.9); g.add(b);
-    const h = cyl(0.16, 0.95, M.chip, 'y', 12); at(h, x, D / 2 + 0.62, 1.9); g.add(h);
-  }
-  g.add(at(box(1.2, 0.5, 1.6, M.wireBlack, 0.1), 4.6, D / 2 + 0.4, 1.9));
-  g.add(at(box(0.9, 0.2, 0.6, M.cableRed, 0.05), 4.6, D / 2 + 0.7, 2.2));
-  for (const sx of [-1, 1]) for (const sy of [-1, 1]) { const ft = cyl(0.8, 0.4, M.wireBlack, 'z', 16); at(ft, sx * 5, sy * 10, 0.2); g.add(ft); }
   return g;
 }
 

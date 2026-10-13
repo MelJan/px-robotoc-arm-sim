@@ -53,7 +53,6 @@ export function makeMaterials() {
     piWhite: S({ color: 0xf0f0f0, roughness: 0.45 }),
     metalBox: S({ color: 0x8c8f93, metalness: 0.7, roughness: 0.45 }),
     psuBody: S({ color: 0x6c7076, metalness: 0.4, roughness: 0.55 }),
-    psuFront: S({ color: 0xe8e3d4, roughness: 0.6 }),
     led: S({ color: 0xff2a1a, emissive: 0xff2a1a, emissiveIntensity: 1.6 }),
     camBody: P({ color: 0x17191c, roughness: 0.4, metalness: 0.5, clearcoat: 0.4 }),
     glass: P({ color: 0x05070a, roughness: 0.05, metalness: 0.2, clearcoat: 1 }),

@@ -65,8 +65,10 @@ export function rotvec(R) {
   const c = Math.max(-1, Math.min(1, (R[0][0] + R[1][1] + R[2][2] - 1) / 2)), th = Math.acos(c);
   if (th < 1e-9) return [0, 0, 0];
   if (Math.PI - th < 1e-6) {   // 180 deg: axis from the diagonal
-    const k = [Math.sqrt(Math.max(0, (R[0][0] + 1) / 2)), Math.sqrt(Math.max(0, (R[1][1] + 1) / 2)), Math.sqrt(Math.max(0, (R[2][2] + 1) / 2))];
-    if (R[0][1] < 0) k[1] = -k[1]; if (R[0][2] < 0) k[2] = -k[2];
+    // R = 2 k k^T - I: signs relative to the largest component (a camera looking straight along -Y has k[0] = 0)
+    const k = [0, 1, 2].map(i => Math.sqrt(Math.max(0, (R[i][i] + 1) / 2)));
+    const m = k.indexOf(Math.max(...k));
+    for (let i = 0; i < 3; i++) if (i !== m && R[m][i] + R[i][m] < 0) k[i] = -k[i];
     return k.map(v => v * th);
   }
   const s = 2 * Math.sin(th);

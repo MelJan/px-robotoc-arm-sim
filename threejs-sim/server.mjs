@@ -231,6 +231,22 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': /png$/i.test(f) ? 'image/png' : 'image/jpeg', 'Cache-Control': 'no-cache' });
       return fs.createReadStream(f).on('error', () => res.destroy()).pipe(res);
     }
+    // Calibration captures (tools/capture.mjs), read only: the list with each info.json, and their files
+    if (req.url.split('?')[0] === '/calibration/index.json') {
+      const root = path.join(REPO, 'docs', 'images', 'calibration');
+      const list = fs.existsSync(root) ? fs.readdirSync(root, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => {
+        let info = null; try { info = JSON.parse(fs.readFileSync(path.join(root, d.name, 'info.json'), 'utf8')); } catch { /* no info */ }
+        return { name: d.name, files: fs.readdirSync(path.join(root, d.name)), info };
+      }) : [];
+      return sendJson(res, 200, list.sort((a, b) => a.name.localeCompare(b.name)));
+    }
+    const cf = req.url.split('?')[0].match(/^\/calibration\/([\w.-]+)\/([\w.-]+\.(?:jpe?g|png|json))$/i);
+    if (cf) {
+      const f = path.join(REPO, 'docs', 'images', 'calibration', cf[1], cf[2]);
+      if (!fs.existsSync(f)) return sendJson(res, 404, { error: 'no such file' });
+      res.writeHead(200, { 'Content-Type': /json$/i.test(f) ? 'application/json' : /png$/i.test(f) ? 'image/png' : 'image/jpeg', 'Cache-Control': 'no-cache' });
+      return fs.createReadStream(f).on('error', () => res.destroy()).pipe(res);
+    }
     if (req.url.startsWith('/ref/camera-2026-10-12.jpg')) {
       const f = path.join(REPO, 'docs', 'images', 'photos', 'controller-camera-2026-10-12.jpg');
       res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-cache' });

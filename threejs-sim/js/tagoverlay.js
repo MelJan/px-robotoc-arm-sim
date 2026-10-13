@@ -67,3 +67,46 @@ export function buildTagOverlay() {
   }
   return { group, update };
 }
+
+/**
+ * The tags the cameras see right now (live tracking), on the arm model: a filled square over each seen tag,
+ * green when two cameras see it, amber for one, with a label "106 · OAK + Webcam"; tags not seen
+ * get a thin grey outline. update(angles, seen) with seen = { [id]: [{ cam, err }] }.
+ */
+export function buildSeenOverlay() {
+  const group = new THREE.Group();
+  group.name = 'seen-tags';
+  const GREEN = 0x16a34a, AMBER = 0xd97706, GREY = 0x8a94a3;
+  const items = ARM_TAGS.filter(t => t.id != null).map(t => {
+    const fill = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: GREEN, transparent: true, opacity: 0.35, depthTest: false, side: THREE.DoubleSide }));
+    fill.geometry.setIndex([0, 1, 2, 0, 2, 3]);
+    fill.geometry.setAttribute('position', new THREE.Float32BufferAttribute(new Array(12).fill(0), 3));
+    const outline = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([0, 1, 2, 3].map(() => new THREE.Vector3())),
+      new THREE.LineBasicMaterial({ color: GREY, depthTest: false, transparent: true, opacity: 0.9 }));
+    for (const o of [fill, outline]) { o.renderOrder = 11; o.frustumCulled = false; group.add(o); }
+    return { t, fill, outline, txt: null, key: '' };
+  });
+  function update(angles, seen = {}) {
+    const f = fk(angles), V = a => new THREE.Vector3(...a);
+    for (const it of items) {
+      const tp = tagPoints(it.t, angles, f), list = seen[it.t.id] || [];
+      // a little larger than the black square, so it frames the printed tag
+      const c = V(tp.centre), corners = tp.corners.map(p => V(p).sub(c).multiplyScalar(1.3).add(c));
+      it.outline.geometry.setFromPoints(corners);
+      it.fill.geometry.attributes.position.copyArray(corners.flatMap(p => [p.x, p.y, p.z]));
+      it.fill.geometry.attributes.position.needsUpdate = true;
+      const colour = list.length >= 2 ? GREEN : list.length ? AMBER : GREY;
+      it.fill.visible = list.length > 0;
+      it.fill.material.color.setHex(colour); it.outline.material.color.setHex(colour);
+      // the cameras only (the errors are in the tracking box): a label is a texture, rebuilt only when this text changes
+      const key = list.length ? `${it.t.id} · ${list.map(s => s.cam).join(' + ')}` : '';
+      if (key !== it.key) {                                   // labels are textures: rebuilt only when the text changes
+        if (it.txt) { group.remove(it.txt); it.txt.material.map.dispose(); it.txt.material.dispose(); it.txt = null; }
+        if (key) { it.txt = label(key, colour); it.txt.scale.multiplyScalar(0.8); it.txt.renderOrder = 12; it.txt.frustumCulled = false; group.add(it.txt); }
+        it.key = key;
+      }
+      if (it.txt) it.txt.position.copy(V(point(f[it.t.link], it.t.centre.map((v, i) => v + 2.2 * it.t.normal[i]))));
+    }
+  }
+  return { group, update };
+}
