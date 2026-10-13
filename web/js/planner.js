@@ -52,7 +52,9 @@ export function planTransfer(world, { pick, place }, start, { servos = SERVOS, h
 
   // Where the cube centre goes.
   let tx, ty, tz, tyaw, onWhat;
-  if (place.on) {
+  if (!place) {
+    onWhat = 'gripper';
+  } else if (place.on) {
     const base = world.cube(place.on);
     if (!base) throw new PlanError(`no cube "${place.on}"`);
     if (base === c) throw new PlanError('cannot put a cube on itself');
@@ -82,17 +84,22 @@ export function planTransfer(world, { pick, place }, start, { servos = SERVOS, h
   };
 
   // Highest hover that both ends can reach (docs/tracking-plan.md: shorter hover above stacks).
-  const want = Math.min(c.p[2] < CUBE ? PLAN.hover : PLAN.hoverStacked, tz < CUBE ? PLAN.hover : PLAN.hoverStacked);
+  const pickHover = c.p[2] < CUBE ? PLAN.hover : PLAN.hoverStacked;
+  const want = place ? Math.min(pickHover, tz < CUBE ? PLAN.hover : PLAN.hoverStacked) : pickHover;
   let hover = null;
   for (const h of [want, 3.5, 2, 1.5, 1].filter(h => h <= want)) {
-    try { solve(c.p[0], c.p[1], c.p[2] + h, cubeYaw(c), 'probe'); solve(tx, ty, tz + RELEASE_GAP + h, tyaw, 'probe'); hover = h; break; }
+    try {
+      solve(c.p[0], c.p[1], c.p[2] + h, cubeYaw(c), 'probe');
+      if (place) solve(tx, ty, tz + RELEASE_GAP + h, tyaw, 'probe');
+      hover = h; break;
+    }
     catch (e) { if (!(e instanceof PlanError)) throw e; }
   }
   s5Near = anglesFromCounts(start, servos).s5;
   if (hover === null) {
     // Report the real reason with the lowest hover.
     solve(c.p[0], c.p[1], c.p[2] + 1, cubeYaw(c), `above ${pick}`);
-    solve(tx, ty, tz + RELEASE_GAP + 1, tyaw, `above ${onWhat}`);
+    if (place) solve(tx, ty, tz + RELEASE_GAP + 1, tyaw, `above ${onWhat}`);
   }
 
   const steps = [];
@@ -113,6 +120,9 @@ export function planTransfer(world, { pick, place }, start, { servos = SERVOS, h
   const grip = steps[steps.length - 1].counts.slice(0, 5);
   push(`Grip ${pick}`, 'pick', grip, S6.grip);
   vertical(c.p[0], c.p[1], c.p[2], c.p[2] + hover, cubeYaw(c), S6.grip, 'Lift', 'carry');
+  if (!place) {
+    return { steps, info: { pick, onWhat, hover, target: [...c.p], targetYaw: cubeYaw(c), vias: 0, retainGrasp: true } };
+  }
   const placeZ = tz + RELEASE_GAP;
   push(`Above ${onWhat === 'board' ? `(${tx.toFixed(1)}, ${ty.toFixed(1)})` : onWhat}`, 'carry', solve(tx, ty, placeZ + hover, tyaw, 'above target'), S6.grip);
   vertical(tx, ty, placeZ + hover, placeZ, tyaw, S6.grip, 'Lower', 'place');
@@ -120,88 +130,7 @@ export function planTransfer(world, { pick, place }, start, { servos = SERVOS, h
   vertical(tx, ty, placeZ, placeZ + hover, tyaw, S6.open, 'Withdraw', 'place');
   if (home) push('HOME', 'return', home.slice(0, 5), home[5]);
 
-  const vias = insertVias(world, steps, start, servos);
-  return { steps, info: { pick, onWhat, hover, target: [tx, ty, tz], targetYaw: tyaw, vias } };
-}
-
-// ---------------- collision-aware transits ----------------
-
-/** Does the straight joint-space path a -> b (what demo playback does) stay free of contacts? */
-function segmentClear(w, a, b) {
-  const n = Math.max(2, Math.ceil(Math.max(...a.map((v, i) => Math.abs(b[i] - v))) / 4));
-  const snap = w.snapshot();
-  let clear = true;
-  for (let i = 1; i <= n && clear; i++) {
-    w.step(0, a.map((v, k) => v + (b[k] - v) * i / n));
-    if (w.contacts.length) clear = false;
-  }
-  w.restore(snap);
-  return clear;
-}
-
-/**
- * Walk through the plan; wherever a joint-space transit would hit something, insert one or
- * two raised via poses (gripper pointing down, above the tallest stack, closer to S1).
- * Changes `steps` in place and returns how many vias were added.
- */
-function insertVias(world, steps, start, servos) {
-  const w = new World(servos);
-  w.restore(world.snapshot());
-  w.margin = PLAN.transitMargin;
-  let cur = start.slice(), added = 0;
-  w.step(0, cur);
-  for (let i = 0; i < steps.length; i++) {
-    const next = steps[i].counts;
-    w.margin = steps[i].phase === 'return' ? PLAN.returnMargin : PLAN.transitMargin;
-    if (!segmentClear(w, cur, next)) {
-      const via = findVia(w, cur, next, servos);
-      if (via) {
-        const s6 = cur[5];
-        const extra = via.map((five, k) => ({ label: `Transit ${k + 1}`, phase: steps[i].phase, counts: five.concat([s6]) }));
-        steps.splice(i, 0, ...extra);
-        added += extra.length;
-        i += extra.length - 1;
-        cur = extra[extra.length - 1].counts.slice();
-        w.step(0, cur);
-        continue;
-      }
-    }
-    w.step(0, next);
-    for (let k = 0; k < 60 && !w.settled(); k++) w.step(0.02, next);
-    cur = next.slice();
-  }
-  return added;
-}
-
-function findVia(w, a, b, servos) {
-  const free = w.cubes.filter(c => c.state !== 'held');
-  const topZ = free.reduce((m, c) => Math.max(m, c.p[2] + CUBE / 2), 0);
-  const holding = !!w.holding;
-  const zBase = topZ + (holding ? CUBE / 2 : 0.7) + 1.0;   // grasp point height that clears every stack
-  const s1a = anglesFromCounts(a, servos).s1, s1b = anglesFromCounts(b, servos).s1;
-  const s5 = anglesFromCounts(a, servos).s5;
-  const pose = (s1deg, r, zc) => {
-    const t = s1deg * Math.PI / 180;
-    try {
-      const q = ikTopDown(r * Math.sin(t), r * Math.cos(t), zc, { cubeYaw: -s1deg - s5, s5Near: s5, servos });
-      const c = countsFromAngles(q, a[5], servos);
-      return guardViolations(c, servos).length ? null : c.slice(0, 5);
-    } catch (e) { if (e instanceof Unreachable) return null; throw e; }
-  };
-  const radii = [12, 14, 10, 16, 18], lifts = [0, 2, 4, 6];
-  const ok = (p, q) => segmentClear(w, p, q);
-  const full = p => p.concat([a[5]]);
-  // One via, between the two S1 angles.
-  for (const dz of lifts) for (const r of radii) for (const s1 of [(s1a + s1b) / 2, s1a, s1b]) {
-    const v = pose(s1, r, zBase + dz);
-    if (v && ok(a, full(v)) && ok(full(v), b)) return [v];
-  }
-  // Two vias: rise above the start, swing, come down above the end.
-  for (const dz of lifts) for (const r of radii) {
-    const v1 = pose(s1a, r, zBase + dz), v2 = pose(s1b, r, zBase + dz);
-    if (v1 && v2 && ok(a, full(v1)) && ok(full(v1), full(v2)) && ok(full(v2), b)) return [v1, v2];
-  }
-  return null;
+  return { steps, info: { pick, onWhat, hover, target: [tx, ty, tz], targetYaw: tyaw, vias: 0 } };
 }
 
 // ---------------- headless verification ----------------
@@ -209,87 +138,52 @@ function findVia(w, a, b, servos) {
 /**
  * Run a plan in a copy of the world. mode 'demo' plays full poses at `speed` counts/s
  * (the controller's demo playback); mode 'moves' plays single-joint moves at 20 counts/s
- * (what the HTTP API can do). Returns a report with every contact and the end state.
+ * (what the HTTP API can do). This checks the simulated grasp/place outcome;
+ * geometric collision checking is intentionally disabled during calibration.
  */
 export function verify(world, plan, start, { mode = 'demo', speed = 20, servos = SERVOS, moves = null, dt = 1 / 30 } = {}) {
   const w = new World(servos);
   w.restore(world.snapshot());
   const ctl = new SimController(servos);
   ctl.setCommands(start);
-  let labels = plan.steps.map(s => s.label);
+  const labels = plan.steps.map(s => s.label);
   if (mode === 'moves') {
     const mv = moves || toMoves(world, plan, start, servos).moves;
     ctl.runMoves(mv, mv.map(m => m.label));
   } else {
     ctl.runPoses(plan.steps.map(s => s.counts), speed, labels);
   }
-  const contacts = new Map();
-  let t = 0, label = '';
+  let t = 0;
   w.events = [];
   w.step(0, ctl.position);
   while ((ctl.busy || !w.settled()) && t < 1200) {
     ctl.update(dt);
-    if (ctl.motion) label = ctl.motion.label;
     w.step(dt, ctl.position);
     t += dt;
-    for (const k of w.contacts) {
-      const key = `${k.a} × ${k.b}`;
-      const prev = contacts.get(key);
-      if (!prev || k.sep < prev.sep) contacts.set(key, { a: k.a, b: k.b, sep: k.sep, step: prev ? prev.step : label, t: prev ? prev.t : t });
-    }
   }
   const c = w.cube(plan.info.pick);
   const [tx, ty, tz] = plan.info.target;
   const off = Math.hypot(c.p[0] - tx, c.p[1] - ty);
-  const ok = c.state !== 'held' && off < 0.9 && Math.abs(c.p[2] - tz) < 0.3 && cubeTilt(c) < 10 && contacts.size === 0;
-  return { ok, duration: t, contacts: [...contacts.values()], events: w.events, offset: off, final: w.snapshot() };
+  const ok = plan.info.retainGrasp
+    ? c.state === 'held'
+    : c.state !== 'held' && off < 0.9 && Math.abs(c.p[2] - tz) < 0.3 && cubeTilt(c) < 10;
+  return { ok, duration: t, contacts: [], events: w.events, offset: off, final: w.snapshot(), verification: 'physics-outcome-only' };
 }
 
 // ---------------- full poses -> single-joint moves ----------------
 
-const PERMS = arr => arr.length <= 1 ? [arr] : arr.flatMap((x, i) => PERMS([...arr.slice(0, i), ...arr.slice(i + 1)]).map(p => [x, ...p]));
-
 /**
- * The real API moves one joint at a time. For each step, pick the joint order whose
- * intermediate poses stay free of contacts (checked kinematically at a few points).
+ * Convert each coordinated pose to deterministic S1→S6 single-joint steps.
+ * The result is for simulation/controller preview only while collision checks are disabled.
  */
 export function toMoves(world, plan, start, servos = SERVOS) {
-  const w = new World(servos);
-  w.restore(world.snapshot());
-  w.margin = PLAN.transitMargin;
   let cur = start.slice();
-  const moves = [], notes = [];
-  w.step(0, cur);
-  const clearOrder = order => {
-    const snap = w.snapshot();
-    let c = cur.slice(), clean = true;
-    for (const ch of order) {
-      const from = c[ch], to = target[ch];
-      for (const f of [0.25, 0.5, 0.75, 1]) {
-        c[ch] = from + (to - from) * f;
-        w.step(0, c);
-        if (w.contacts.length) { clean = false; break; }
-      }
-      if (!clean) break;
-    }
-    w.restore(snap);
-    return clean;
-  };
-  let target;
+  const moves = [];
   for (const s of plan.steps) {
-    target = s.counts;
+    const target = s.counts;
     const changed = [0, 1, 2, 3, 4, 5].filter(ch => target[ch] !== cur[ch]);
-    // Lifting: raise S2 (shoulder) last when going down, first when going up; S6 alone.
-    const candidates = changed.length <= 4 ? PERMS(changed)
-      : [changed, changed.slice().reverse(), [1, 2, 3, 0, 4, 5].filter(c => changed.includes(c)), [3, 2, 1, 0, 4, 5].filter(c => changed.includes(c))];
-    let order = candidates.find(clearOrder);
-    if (!order) { order = candidates[0]; notes.push(`${s.label}: no contact-free joint order found`); }
-    for (const ch of order) moves.push({ ch, target: target[ch], label: `${s.label}: ${servos[ch].name} → ${target[ch]}` });
-    // Advance the world through this step so grasp and release happen.
-    const c = cur.slice();
-    for (const ch of order) { c[ch] = target[ch]; w.step(0, c); }
-    for (let i = 0; i < 60 && !w.settled(); i++) w.step(0.02, c);
+    for (const ch of changed) moves.push({ ch, target: target[ch], label: `${s.label}: ${servos[ch].name} → ${target[ch]}` });
     cur = target.slice();
   }
-  return { moves, notes };
+  return { moves, notes: ['Calibration ordering only; no collision model is active.'] };
 }

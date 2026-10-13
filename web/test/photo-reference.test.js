@@ -19,4 +19,6 @@ test('hardware photo catalog and comparison views stay complete', () => {
 test('the active camera tab loads its saved frame through the guarded photo route', () => {
   const camview = fs.readFileSync(fileURLToPath(new URL('../js/camview.js', import.meta.url)), 'utf8');
   assert.match(camview, /\/reference-photos\/controller-camera-2026-10-12\.jpg/);
+  assert.match(camview, /async function scanConnected/);
+  assert.match(camview, /onVisionUpdate/);
 });

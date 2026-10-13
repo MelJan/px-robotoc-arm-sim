@@ -93,7 +93,7 @@ for (let attempt = 0; attempt < 80; attempt += 1) {
 async function capture(viewDefinition, selectedLook) {
   const simulation = window.sim;
   const byId = (id) => document.getElementById(id);
-  for (const id of ['show-path', 'show-shapes']) {
+  for (const id of ['show-path']) {
     const element = byId(id); if (element) { element.checked = false; element.dispatchEvent(new Event('change')); }
   }
   simulation.ctl.rearm();

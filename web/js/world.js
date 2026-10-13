@@ -1,5 +1,5 @@
 // The simulated world: arm pose from servo counts, the gripper's grasp logic, the cubes as
-// rigid bodies (physics.js) and the collision report. Pure math, no three.js.
+// rigid bodies (physics.js) and rule-based grasping. Pure math, no three.js.
 //
 // - Free cubes are dynamic: gravity, friction, cube-cube and cube-board contacts, and the
 //   arm (a kinematic collider) can push or topple them.
@@ -7,14 +7,14 @@
 //   in a small solver: when the closing jaws reach a cube that sits between the pads, the
 //   jaws square it up, centre it and it moves rigidly with the hand. Opening the jaws
 //   releases it as a dynamic body with the hand's velocity.
-// - step(0, counts) is a pure kinematic check (used by the planner): it reports any arm part
-//   overlapping a cube. step(dt > 0, counts) runs the physics; arm-cube contacts that carry
-//   force are reported as collisions, except the pads centring the cube they are gripping.
+// - step(0, counts) updates kinematics and grasp state without clearance checks.
+// - step(dt > 0, counts) runs cube dynamics; arm/cube impulses affect the cubes but do not
+//   gate or stop arm motion during the current calibration phase.
 
-import { BOARD, CUBE, GRIPPER, SERVOS, PLAN } from './config.js';
+import { BOARD, CUBE, GRIPPER, SERVOS } from './config.js';
 import { fk, anglesFromCounts, gripperTheta, gapForTheta, padDepthForTheta, thetaForGap, countsForGap,
          toolYawAndTilt, apply3, transpose3, point, rotZ } from './kinematics.js';
-import { armShapes, findContacts } from './collision.js';
+import { armPhysicsShapes } from './arm-physics-shapes.js';
 import { PHYS, initBody, stepPhysics, cubeYaw, cubeTilt } from './physics.js';
 
 const wrap90 = d => ((d + 45) % 90 + 90) % 90 - 45;
@@ -30,8 +30,7 @@ export class World {
     this.events = [];
     this.time = 0;
     this.frames = null;
-    this.tol = PLAN.clearance;
-    this.margin = 0;            // extra arm-to-cube clearance for kinematic checks (planner sets it)
+    this.interactionSlop = 0.05;
     this.prevCounts = null;
     this.prevShapes = null;
   }
@@ -136,13 +135,10 @@ export class World {
     const gap = this.gap;
     const heldPose = fr => { const h = this.holding; return h ? { p: point(fr.hand, [0, h.w, h.v]), R: fr.hand.R.slice() } : null; };
 
-    // ---- kinematic check only (planner)
+    // ---- kinematic update only (planning clearance checks are disabled)
     if (dt <= 0) {
       if (this.holding) { const c = this.cube(this.holding.id), hp = heldPose(f); c.p = hp.p; c.R = hp.R; }
-      const shapes = armShapes(f, gap);
-      this.contacts = findContacts(shapes, this.cubes, BOARD, this.tol, this.margin)
-        // pads closing on the cube between them are gripping, not colliding
-        .filter(k => !(this.margin > 0 && /pad|finger/.test(k.a) && k.b.endsWith(' cube') && this.cube(k.b.slice(0, -5)) && this.centring({ part: k.a, cube: k.b.slice(0, -5) }, f, gap)));
+      this.contacts = [];
       this.prevCounts = counts.slice(); this.prevShapes = null;
       return { frames: f, gap, contacts: this.contacts };
     }
@@ -151,14 +147,14 @@ export class World {
     const from = this.prevCounts || counts;
     const n = Math.max(1, Math.ceil(dt / PHYS.h)), h = dt / n;
     const pushes = new Map();
-    const finalShapes = armShapes(f, gap);
+    const finalShapes = armPhysicsShapes(f, gap);
     const needed = this.cubes.some(c => c.state === 'awake' || c.state === 'held') || this.armNearCubes(finalShapes) || (this.prevShapes && this.armNearCubes(this.prevShapes));
     let prev = this.prevShapes;
     if (needed) {
       for (let i = 1; i <= n; i++) {
         const ci = from.map((v, k) => v + (counts[k] - v) * i / n);
         const fi = i === n ? f : fk(anglesFromCounts(ci, this.servos));
-        const shapes = i === n ? finalShapes : armShapes(fi, gap);
+        const shapes = i === n ? finalShapes : armPhysicsShapes(fi, gap);
         if (prev) shapes.forEach((s, k) => { s.prev = prev[k]; });
         for (const s of shapes) if (s.name.endsWith('pad') || s.name.endsWith('finger')) s.pad = true;
         if (this.holding) {
@@ -170,7 +166,7 @@ export class World {
           if (this.centring(hit, fi, gap)) continue;
           const key = `${hit.part} × ${hit.cube} cube`;
           const old = pushes.get(key);
-          if (!old || hit.depth > old.depth) pushes.set(key, { a: hit.part, b: `${hit.cube} cube`, sep: -Math.max(hit.depth, this.tol * 1.2) });
+          if (!old || hit.depth > old.depth) pushes.set(key, { a: hit.part, b: `${hit.cube} cube`, sep: -Math.max(hit.depth, this.interactionSlop * 1.2) });
         }
         prev = shapes;
       }
@@ -181,9 +177,8 @@ export class World {
     this.prevCounts = counts.slice();
     this.afterPhysics();
 
-    // self collision and the board are kinematic checks; cubes report through the physics
-    this.contacts = findContacts(finalShapes, [], BOARD, this.tol).concat([...pushes.values()]);
-    for (const k of pushes.keys()) if (!this.lastPushes?.has(k)) this.event('warn', `arm pushed: ${k}`);
+    this.contacts = [];
+    for (const k of pushes.keys()) if (!this.lastPushes?.has(k)) this.event('physics', `simulated arm/cube interaction: ${k}`);
     this.lastPushes = new Set(pushes.keys());
     return { frames: f, gap, contacts: this.contacts };
   }

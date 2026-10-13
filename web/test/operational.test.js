@@ -63,6 +63,15 @@ test('arming refreshes state and requires backend confirmation', async () => {
   assert.deepEqual(calls.map((call) => `${call.method} ${call.path}`), ['GET /api/state', 'GET /api/state', 'POST /api/power_on', 'GET /api/state']);
 });
 
+test('an already armed controller requires explicit operator confirmation before adoption', async () => {
+  const backend = robotState({ armed: true, outputs_off: false });
+  const client = new RobotArmClient({ fetchImpl: async () => json(backend) });
+  await client.connectReadOnly(); client.enterOperationalDisarmed();
+  await assert.rejects(() => client.adoptArmedSession(), /operator confirmation/i);
+  await client.adoptArmedSession({ operatorConfirmed: true });
+  assert.equal(client.mode, 'operational-armed');
+});
+
 test('operational playback accepts one-servo steps and confirms each command', async () => {
   let backend = robotState({ armed: true, outputs_off: false });
   const posts = [];
@@ -83,6 +92,23 @@ test('operational playback accepts one-servo steps and confirms each command', a
   ]);
 });
 
+test('operational playback reports sending and confirmed progress for the live view', async () => {
+  let backend = robotState({ armed: true, outputs_off: false });
+  const progress = [];
+  const client = new RobotArmClient({ fetchImpl: async (url, options = {}) => {
+    const path = new URL(url, 'http://sim').pathname;
+    if (path.endsWith('/move')) {
+      const body = JSON.parse(options.body);
+      backend = robotState({ armed: true, outputs_off: false, commands: { ...backend.commands, [body.channel]: body.target } });
+      return json({ ok: true });
+    }
+    return json(backend);
+  } });
+  client.setState(backend); client.setMode('operational-armed');
+  await client.executeSingleJointPath(spec, [home, { ...home, S1: 321 }], { onStep: event => progress.push(`${event.phase}:${event.joint}:${event.target}`) });
+  assert.deepEqual(progress, ['sending:S1:321', 'confirmed:S1:321']);
+});
+
 test('operational playback rejects unsafe path shape and backend bounds before POST', async () => {
   const calls = [];
   const backend = robotState({ armed: true, outputs_off: false });
@@ -91,6 +117,30 @@ test('operational playback rejects unsafe path shape and backend bounds before P
   await assert.rejects(() => client.executeSingleJointPath(spec, [home, { ...home, S1: 321, S2: 428 }]), /single-servo/);
   await assert.rejects(() => client.executeSingleJointPath(spec, [home, { ...home, S1: 700 }]), /outside backend session bounds/);
   assert.equal(calls.includes('POST'), false);
+});
+
+test('a halted path stops sending steps and keeps holding without an emergency stop', async () => {
+  let backend = robotState({ armed: true, outputs_off: false });
+  const posts = [];
+  const client = new RobotArmClient({ fetchImpl: async (url, options = {}) => {
+    const path = new URL(url, 'http://sim').pathname;
+    if (options.method === 'POST') posts.push(path);
+    if (path.endsWith('/move')) {
+      const body = JSON.parse(options.body);
+      backend = robotState({ armed: true, outputs_off: false, commands: { ...backend.commands, [body.channel]: body.target } });
+      return json({ ok: true });
+    }
+    return json(backend);
+  } });
+  client.setState(backend); client.setMode('operational-armed');
+  let halt = false;
+  const result = await client.executeSingleJointPath(spec, [home, { ...home, S1: 321 }, { ...home, S1: 322 }], {
+    shouldAbort: () => halt,
+    onStep: (event) => { if (event.phase === 'confirmed') halt = true; },
+  });
+  assert.deepEqual(result, { aborted: true, completed: 1 });
+  assert.deepEqual(posts, ['/api/move']);
+  assert.equal(client.mode, 'operational-armed');
 });
 
 test('a failed move attempts stop and enters fault-stopped mode', async () => {
@@ -107,4 +157,65 @@ test('a failed move attempts stop and enters fault-stopped mode', async () => {
   await assert.rejects(() => client.executeSingleJointPath(spec, [home, { ...home, S1: 321 }]), /Operational playback stopped/);
   assert.deepEqual(posts, ['/api/move', '/api/stop']);
   assert.equal(client.mode, 'fault-stopped');
+});
+
+const park = [330, 540, 580, 195, 480, 650];
+const posedJoints = () => joints().map((joint) => ({ ...joint, home: Object.values(home)[joint.channel], park: park[joint.channel] }));
+
+test('operational PARK sends go_pose and confirms the controller definition', async () => {
+  let backend = robotState({ armed: true, outputs_off: false, joints: posedJoints() });
+  const posts = [];
+  const client = new RobotArmClient({ fetchImpl: async (url, options = {}) => {
+    const path = new URL(url, 'http://sim').pathname;
+    if (options.method === 'POST') posts.push({ path, body: JSON.parse(options.body) });
+    if (path.endsWith('/go_pose')) {
+      backend = { ...backend, commands: Object.fromEntries(park.map((value, channel) => [channel, value])) };
+      return json({ ok: true });
+    }
+    return json(backend);
+  } });
+  client.setState(backend); client.setMode('operational-armed');
+  const state = await client.goPose('PARK');
+  assert.deepEqual(posts, [{ path: '/api/go_pose', body: { name: 'PARK' } }]);
+  assert.equal(state.commands[2], 580);
+  assert.equal(client.mode, 'operational-armed');
+});
+
+test('pose motion requires arming and refuses other pose names before POST', async () => {
+  const calls = [];
+  const backend = robotState({ armed: true, outputs_off: false, joints: posedJoints() });
+  const client = new RobotArmClient({ fetchImpl: async (_url, options = {}) => { calls.push(options.method ?? 'GET'); return json(backend); } });
+  client.setState(backend); client.setMode('operational-disarmed');
+  await assert.rejects(() => client.goPose('PARK'), /arming is required/i);
+  client.setMode('operational-armed');
+  await assert.rejects(() => client.goPose('STRAIGHT UP'), /HOME and PARK/);
+  assert.equal(calls.includes('POST'), false);
+});
+
+test('an unconfirmed pose attempts stop and enters fault-stopped mode', async () => {
+  const backend = robotState({ armed: true, outputs_off: false, joints: posedJoints() });
+  const posts = [];
+  const client = new RobotArmClient({ fetchImpl: async (url, options = {}) => {
+    const path = new URL(url, 'http://sim').pathname;
+    if (options.method === 'POST') posts.push(path);
+    return json(path.endsWith('/state') ? backend : { ok: true });
+  } });
+  client.setState(backend); client.setMode('operational-armed');
+  await assert.rejects(() => client.goPose('PARK'), /PARK stopped: .*not confirmed/);
+  assert.deepEqual(posts, ['/api/go_pose', '/api/stop']);
+  assert.equal(client.mode, 'fault-stopped');
+});
+
+test('a refused pose request keeps holding instead of stopping', async () => {
+  const backend = robotState({ armed: true, outputs_off: false, joints: posedJoints() });
+  const posts = [];
+  const client = new RobotArmClient({ fetchImpl: async (url, options = {}) => {
+    const path = new URL(url, 'http://sim').pathname;
+    if (options.method === 'POST') posts.push(path);
+    return path.endsWith('/go_pose') ? json({ error: 'The gateway exposes only state' }, 404) : json(backend);
+  } });
+  client.setState(backend); client.setMode('operational-armed');
+  await assert.rejects(() => client.goPose('PARK'), /PARK refused: The gateway exposes only state/);
+  assert.deepEqual(posts, ['/api/go_pose']);
+  assert.equal(client.mode, 'operational-armed');
 });

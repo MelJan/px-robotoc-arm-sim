@@ -1,6 +1,5 @@
 // Demonstration: build a tower with the planner, then a physics finale.
-// Every move is planned with the same planner as the Task panel and checked in a copy of the
-// world before it runs. Simulation only.
+// Every move uses the same calibration planner as the Task panel. Simulation only.
 
 import { COLOURS } from './config.js';
 import { planTransfer, verify } from './planner.js';
@@ -15,7 +14,7 @@ function rot(axis, deg) {
 }
 
 /**
- * ctx: { ctl, world, $, log, toast, renderCubes, showPath, setPathVisible(on), moveIsClear(from, to),
+ * ctx: { ctl, world, $, log, toast, renderCubes, showPath, setPathVisible(on),
  *        resetView() }
  * Returns { run, stop, running }.
  */
@@ -39,6 +38,7 @@ export function initDemo(ctx) {
   async function buildTower() {
     for (const [pick, on] of TASKS) {
       if (abort) return false;
+      ctx.setTaskStatus?.({ task: `Demo: ${pick} on ${on}`, destination: `${pick} cube on ${on} cube`, status: 'planning', message: 'Calculating an unchecked simulation transfer.' });
       $('cmd').value = `${pick} on ${on}`;
       const start = ctl.commands.slice();
       const plan = planTransfer(world, { pick, place: { on } }, start, { home: ctl.poses.HOME });
@@ -46,6 +46,7 @@ export function initDemo(ctx) {
       ctx.showPath(plan.steps, start);
       if (!report.ok) { log(`demo: "${pick} on ${on}" does not pass the simulation check, stopping`, 'err'); return false; }
       log(`demo: ${pick} on ${on} (${plan.steps.length} poses, checked)`);
+      ctx.setTaskStatus?.({ task: `Demo: ${pick} on ${on}`, destination: `${pick} cube on ${on} cube`, status: 'moving', message: `Running ${plan.steps.length} unchecked simulation poses.` });
       ctl.runPoses(plan.steps.map(s => s.counts), 60, plan.steps.map(s => s.label));
       await until(() => !ctl.busy && world.settled());
       await pause(0.6);
@@ -54,10 +55,11 @@ export function initDemo(ctx) {
   }
 
   async function finale() {
+    ctx.setTaskStatus?.({ task: 'Demo: physics finale', destination: 'Completed cube tower', status: 'moving', message: 'Running the dynamic-cube physics sequence.' });
     ctx.setPathVisible(false);
-    // swing the arm aside, checked like every other move
+    // Swing the arm aside in simulation; collision checks are disabled.
     const aside = ctl.commands.slice(); aside[0] = 520;
-    if (!ctx.moveIsClear(ctl.commands.slice(), aside)) { ctl.runPoses([aside], 60, ['swing aside']); await until(() => !ctl.busy); }
+    ctl.runPoses([aside], 60, ['swing aside']); await until(() => !ctl.busy);
     log('demo: physics finale, dropping cubes onto the tower', 'ok');
     const top = world.cube('yellow');
     // green lands flat on top (a 4th level by gravity), red clips the top edge
@@ -83,6 +85,7 @@ export function initDemo(ctx) {
     }
     await until(() => world.settled(), 20);
     log('demo: done. "Reset" in the Scene panel restores the cubes', 'ok');
+    ctx.setTaskStatus?.({ task: 'Demo: build a tower', destination: 'Completed cube tower', status: 'complete', message: 'Demo and physics finale completed.' });
   }
 
   async function run() {
@@ -98,12 +101,12 @@ export function initDemo(ctx) {
       log('demo: building a tower', 'ok');
       await until(() => world.settled(), 5);
       if (await buildTower() && !abort) await finale();
-    } catch (e) { log(`demo: ${e.message}`, 'err'); ctx.toast(e.message); }
+    } catch (e) { log(`demo: ${e.message}`, 'err'); ctx.toast(e.message); ctx.setTaskStatus?.({ status: 'error', message: e.message }); }
     ctx.setPathVisible($('show-path').checked);
     running = false; abort = false;
     $('demo-btn').textContent = '▶ Demo: build a tower';
   }
 
-  $('demo-btn').onclick = run;
-  return { run, stop: () => { if (running) abort = true; }, get running() { return running; } };
+  // $('demo-btn').onclick = run; // Task panel is commented out in index.html.
+  return { run, stop: () => { if (running) { abort = true; ctx.setTaskStatus?.({ status: 'stopped', message: 'Demo stop requested.' }); } }, get running() { return running; } };
 }

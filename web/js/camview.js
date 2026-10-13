@@ -4,7 +4,7 @@
 // Reference frames come only from the repository or a local file selected by the user.
 
 import * as THREE from 'three';
-import { CAMERA, MAT } from './config.js';
+import { CAMERA, MAT, CUBE } from './config.js';
 import { calibrate, project, MARKER_CORNERS, SAVED_FRAME_CORNERS, markerCentre } from './calib.js';
 import { detectCubes } from './detect.js';
 import { detectMarkers } from './aruco.js';
@@ -72,6 +72,7 @@ export function initCameraTab(ctx) {
   let points = savedPairs();            // { id, k?, X, uv }
   let picking = null;                    // marker id waiting for a click
   let source = 'saved';
+  let calibrationSource = 'saved reference calibration';
 
   const visible = () => !$('tab-camera').hidden;
 
@@ -106,7 +107,8 @@ export function initCameraTab(ctx) {
   };
   $('cam-source').onchange = loadSource;
   $('cam-file').onchange = e => { const f = e.target.files[0]; if (f) setPhoto(URL.createObjectURL(f)); };
-  $('cam-refresh').onclick = () => refreshConnectedFrame().catch(error => ctx.toast(error.message));
+  // The app can turn a refresh into a full scan (markers, blocks and live simulation sync).
+  $('cam-refresh').onclick = () => (ctx.onConnectedRefresh ? ctx.onConnectedRefresh() : refreshConnectedFrame()).catch(error => ctx.toast(error.message));
   photo.onerror = () => ctx.toast('The selected reference image could not be loaded');
   // A new reference frame: find markers and refit the camera right away.
   photo.onload = () => {
@@ -142,12 +144,13 @@ export function initCameraTab(ctx) {
     try {
       const fixPrincipal = p.length < 10;
       cal = calibrate(p.map(q => q.X), p.map(q => q.uv), { fixPrincipal });
+      calibrationSource = 'manual calibration points';
       ctx.onApply(cal);
       ctx.log(`camera solved from ${p.length} points: f ${cal.f.toFixed(0)} px, ${cal.rms.toFixed(2)} px rms`, 'ok');
       update();
     } catch (e) { ctx.toast(`Calibration failed: ${e.message}`); }
   };
-  $('cam-reset').onclick = () => { cal = defaultCalibration(); ctx.onApply(cal); update(); };
+  $('cam-reset').onclick = () => { cal = defaultCalibration(); calibrationSource = 'saved reference calibration'; ctx.onApply(cal); update(); };
   $('cam-copy').onclick = async () => {
     const j = JSON.stringify({ f_px: +cal.f.toFixed(2), cx: +cal.cx.toFixed(2), cy: +cal.cy.toFixed(2), R: cal.R.map(r => r.map(v => +v.toFixed(6))), t_mm: cal.t.map(v => +v.toFixed(2)), centre_mm: cal.centre.map(v => +v.toFixed(1)), rms_px: +cal.rms.toFixed(3) }, null, 1);
     try { await navigator.clipboard.writeText(j); ctx.toast('Camera parameters copied'); } catch { console.log(j); }
@@ -217,6 +220,7 @@ export function initCameraTab(ctx) {
       const next = calibrate(points.map(q => q.X), points.map(q => q.uv), { fixPrincipal: ids.length < 3 });
       if (next.rms > 4) throw new Error(`fit too poor (${next.rms.toFixed(1)} px)`);
       cal = next;
+      calibrationSource = source === 'connected' ? 'live mat markers' : source === 'file' ? 'local-image mat markers' : 'saved-frame mat markers';
       ctx.onApply(cal);
       $('cam-pick-hint').textContent = `Markers found: ${ids.sort().join(', ')} in ${ms.toFixed(0)} ms. Camera fitted to ${points.length} corners, ${cal.rms.toFixed(2)} px rms.`;
       if (!quiet || announce) ctx.log(`camera calibrated from markers ${ids.join(', ')}: f ${cal.f.toFixed(0)} px, ${cal.rms.toFixed(2)} px rms, camera at ${cal.centre.map(v => v.toFixed(0)).join(' / ')} mm (mat frame); 3D model updated`, 'ok');
@@ -321,9 +325,75 @@ export function initCameraTab(ctx) {
         }).join('') + (ms ? `<div>${ms.toFixed(0)} ms</div>` : '')
       : 'No cubes found on the mat.';
     $('cam-detect-use').disabled = !detections.some(d => d.ok);
+    ctx.onVisionUpdate?.(visionObservation({
+      state: 'ready',
+      message: `${detections.length} coloured block candidate${detections.length === 1 ? '' : 's'} found${ms ? ` in ${ms.toFixed(0)} ms` : ''}. Positions are RGB plane estimates in the board frame.`,
+    }));
     draw();
   }
   $('cam-detect-use').onclick = () => { ctx.useDetections(detections.filter(d => d.ok)); };
+
+  function visionObservation({ state = 'ready', message = '' } = {}) {
+    const forward = cal.R[2];
+    const pitch = deg(Math.asin(-forward[2]));
+    const yaw = deg(Math.atan2(forward[1], forward[0]));
+    const roll = deg(Math.atan2(cal.R[0][2], -cal.R[1][2]));
+    return {
+      state,
+      message,
+      timestamp: new Date().toISOString(),
+      camera: {
+        source: calibrationSource,
+        matMm: [...cal.centre],
+        boardMm: tableToBoardMm(cal.centre),
+        pitchDeg: pitch,
+        yawDeg: yaw,
+        rollDeg: roll,
+        rmsPx: cal.rms,
+      },
+      markers: Object.entries(markerQuads)
+        .map(([id, corners]) => ({
+          id: Number(id),
+          pixel: [
+            corners.reduce((sum, corner) => sum + corner[0], 0) / corners.length,
+            corners.reduce((sum, corner) => sum + corner[1], 0) / corners.length,
+          ],
+        }))
+        .filter(marker => MARKER_CORNERS[marker.id]),
+      cubes: detections.map(detection => ({
+        colour: detection.colour,
+        tableMm: [detection.X, detection.Y, CUBE * 5],
+        boardMm: [...tableToBoardMm([detection.X, detection.Y, CUBE * 5])],
+        yawDeg: detection.yaw,
+        areaRatio: detection.areaRatio,
+        ok: detection.ok,
+      })),
+    };
+  }
+
+  async function scanConnected() {
+    ctx.onVisionUpdate?.(visionObservation({ state: 'scanning', message: 'Requesting a live OAK-camera snapshot; no robot command is being sent.' }));
+    try {
+      source = 'connected';
+      $('cam-source').value = 'connected';
+      $('cam-refresh').hidden = false;
+      $('cam-refresh').disabled = false;
+      points = [];
+      await refreshConnectedFrame();
+      const fittedLive = autoCalibrate({ quiet: true, announce: true });
+      if (!fittedLive) calibrationSource = 'saved reference calibration (live mat markers insufficient)';
+      const img = grabFrame();
+      if (!img) throw new Error('The connected camera frame could not be read');
+      const started = performance.now();
+      detections = detectCubes(img, cal);
+      showDetections(performance.now() - started);
+      return visionObservation();
+    } catch (error) {
+      const observation = visionObservation({ state: 'error', message: error.message });
+      ctx.onVisionUpdate?.(observation);
+      throw error;
+    }
+  }
 
   // ---- drawing
   function draw() {
@@ -423,8 +493,9 @@ export function initCameraTab(ctx) {
     loadSource();
   }
   return {
-    update, render, markDirty: () => { dirty = true; }, addTracker, grabFrame, activate,
+    update, render, markDirty: () => { dirty = true; }, addTracker, grabFrame, activate, scanConnected,
     get calibration() { return cal; },
+    get detections() { return structuredClone(detections); },
     get gripperObservation() { return gripperObservation ? structuredClone(gripperObservation) : null; },
   };
 }

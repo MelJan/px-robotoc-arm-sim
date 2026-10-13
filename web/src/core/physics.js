@@ -1,10 +1,28 @@
 import RAPIER from '@dimforge/rapier3d-compat';
-import { robotCapsules } from './collision.js';
 import { forwardKinematics } from './kinematics.js';
 import { transformPoint } from './math.js';
 
 const METRES_PER_MILLIMETRE = 0.001;
 const vector = ([x, y, z]) => ({ x: x * METRES_PER_MILLIMETRE, y: y * METRES_PER_MILLIMETRE, z: z * METRES_PER_MILLIMETRE });
+
+// Physics-only approximations that let the simulated arm push cubes. They are
+// intentionally not used to accept, reject or stop any trajectory.
+function robotPhysicsCapsules(spec, counts) {
+  const pose = forwardKinematics(spec, counts);
+  const radii = spec.world.physics.robotRadii;
+  const gripperLength = pose.gripper.length;
+  const padRadius = Math.min(4, radii.gripper);
+  const padCenter = pose.gripper.gap / 2 + padRadius;
+  const gripperStart = Math.min(25, gripperLength * 0.25);
+  return [
+    { id: 'pedestal', start: [0, 0, spec.fixture.upperPlate.top], end: pose.shoulder, radius: radii.pedestal, fixed: true },
+    { id: 'upperArm', start: pose.shoulder, end: pose.elbow, radius: radii.upperArm },
+    { id: 'forearm', start: pose.elbow, end: pose.wrist, radius: radii.forearm },
+    { id: 'wrist', start: pose.wrist, end: pose.flange, radius: radii.wrist },
+    { id: 'gripperFront', start: transformPoint(pose.toolTransform, [padCenter, 0, gripperStart]), end: transformPoint(pose.toolTransform, [padCenter, 0, gripperLength]), radius: padRadius },
+    { id: 'gripperBack', start: transformPoint(pose.toolTransform, [-padCenter, 0, gripperStart]), end: transformPoint(pose.toolTransform, [-padCenter, 0, gripperLength]), radius: padRadius },
+  ];
+}
 
 function segmentPose(start, end) {
   const a = vector(start); const b = vector(end);
@@ -50,7 +68,7 @@ export class PhysicsWorld {
       this.cubeBodies.set(cube.id, body);
       this.cubeColliders.set(cube.id, collider);
     }
-    for (const capsule of robotCapsules(this.spec, initialCounts, { physicsGripper: true })) {
+    for (const capsule of robotPhysicsCapsules(this.spec, initialCounts)) {
       if (capsule.fixed) continue;
       const pose = segmentPose(capsule.start, capsule.end);
       const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(pose.center.x, pose.center.y, pose.center.z).setRotation(pose.rotation));
@@ -72,7 +90,7 @@ export class PhysicsWorld {
 
   setRobotPose(counts) {
     if (!this.ready) return;
-    for (const capsule of robotCapsules(this.spec, counts, { physicsGripper: true })) {
+    for (const capsule of robotPhysicsCapsules(this.spec, counts)) {
       const body = this.robotBodies.get(capsule.id);
       if (!body) continue;
       const pose = segmentPose(capsule.start, capsule.end);
@@ -108,29 +126,6 @@ export class PhysicsWorld {
     if (!this.ready) return;
     this.world.timestep = dt;
     this.world.step();
-  }
-
-  robotCubeContacts() {
-    if (!this.ready) return [];
-    const cubeByHandle = new Map([...this.cubeColliders].map(([id, collider]) => [collider.handle, id]));
-    const contacts = [];
-    for (const [part, collider] of this.robotColliders) {
-      this.world.contactPairsWith(collider, (other) => {
-        const cube = cubeByHandle.get(other.handle);
-        if (!cube) return;
-        let touching = false;
-        this.world.contactPair(collider, other, (manifold) => {
-          for (let index = 0; index < manifold.numContacts(); index += 1) {
-            // Rapier retains broad/narrow-phase pairs before surfaces touch.
-            // Treat only penetration or a sub-millimetre speculative contact as
-            // a runtime collision.
-            if (manifold.contactDist(index) <= 0.0005) touching = true;
-          }
-        });
-        if (touching) contacts.push({ a: part, b: `${cube} cube` });
-      });
-    }
-    return contacts;
   }
 
   cubeTransforms() {

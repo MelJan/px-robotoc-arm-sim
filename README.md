@@ -3,21 +3,26 @@
 This is the `feat/threejs-vk` browser implementation of the PX robot-arm
 simulator. It is independent of the team's Blender, MuJoCo and Unreal work.
 
-The application now supports full virtual simulation and planning:
+The application currently supports calibration-focused virtual simulation:
 
 - a detailed photo-informed Three.js arm, calibration mat, desk fixture,
   cables, servos, horns and linkage claw;
 - a versioned millimetre `arm-spec.json` with explicit provenance;
 - modular forward/inverse kinematics;
-- capsule/box self, board, fixture and workpiece collision detection;
-- deterministic optimizing joint-space planning and smoothing;
-- text pick/place tasks with approach/lift waypoints and collision verification;
+- direct joint-space interpolation and numerical IK;
+- text pick/place tasks with approach/lift waypoints and physics outcome checks;
 - coordinated and one-servo-at-a-time playback;
 - lazy-loaded Rapier3D contact physics and dynamic solid cubes;
-- live robot/cube contact stopping plus clearance-routed task returns;
+- simulated cube interaction without motion-gating collision checks;
 - calibrated gripper-marker tracking for planned/simulated/observed TCP comparison; and
 - simulation plus explicitly guarded read-only/disarmed/armed operational
   modes for the existing robot-arm API.
+
+The provisional collision planner and runtime collision stops were removed for
+the current calibration phase because their unmeasured envelopes produced
+false rejections. Automated physical task/pose playback is disabled. Explicitly
+armed single-joint slider commands still retain arming, bounds, rate limiting,
+backend confirmation and emergency stop.
 
 Simulation is the default and startup performs no physical-arm request. The
 hardware has no position feedback, so operational state is labelled commanded
@@ -59,12 +64,12 @@ separate embedded Rapier WebAssembly runtime.
 | `web/js/gripper-tracker.js` | marker pose and physical TCP estimation |
 | `web/js/model/` | detailed photo-informed robot, fixture, mat, cables and gripper |
 | `web/js/advanced.js` | canonical-mm adapter for the preserved visual calibration |
-| `web/src/core/` | pure kinematics, collision, planning, playback and physics adapters |
+| `web/src/core/` | pure kinematics, calibration planning, playback and physics adapters |
 | `web/src/operational/client.js` | guarded same-origin robot API state machine |
 | `web/src/operational/gateway.js` | allowlist policy for proxied robot routes |
 | `web/server.mjs` | production static server and read-only-by-default API gateway |
 | `web/public/arm-spec.json` | millimetre model, planner settings and provenance |
-| `web/test/` | 40 model, planner, physics, tracking, connection and reference-integrity tests |
+| `web/test/` | 39 model, planner, physics, tracking, connection and reference-integrity tests |
 | `web/README.md` | usage and operational-mode guide |
 | `docs/threejs-implementation.md` | detailed design and validation status |
 | `docs/arm-photo-reference.md` | hardware-photo index and overlay validation workflow |

@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PX-robo-arm-simulator</title>
+<script>
+if (window.location.protocol === 'file:') {
+  window.location.replace('http://127.0.0.1:8770/');
+}
+</script>
 <link rel="stylesheet" href="style.css">
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.min.js" } }
@@ -15,6 +20,7 @@
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 20h8M8 20v-4l4-6 5 2m-5-2 1-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="10" r="1.6" fill="currentColor"/><circle cx="17" cy="12" r="1.4" fill="currentColor"/></svg>
     <span>PX-robo-arm-simulator</span>
     <span id="mode-badge" class="badge">offline twin</span>
+    <button id="live-mode" class="live-mode" aria-pressed="false" title="Connect to the physical robot; explicit operator confirmation is required before motion">Live Mode</button>
   </div>
   <div class="hdr-right">
     <span id="hud" class="hud"></span>
@@ -28,18 +34,67 @@
 
 <main>
   <section id="view">
-    <canvas id="canvas"></canvas>
-    <div class="view-tools">
-      <button data-view="orbit" class="on">Perspective</button>
-      <button data-view="top">Top</button>
-      <button data-view="side">Side</button>
-      <button data-view="oak">OAK camera</button>
-      <span class="sep"></span>
-      <label><input type="checkbox" id="show-path" checked> Path</label>
-      <label><input type="checkbox" id="show-shapes"> Collision shapes</label>
+    <div id="visual-stage">
+      <div id="simulation-stage" class="view-pane simulation-stage">
+        <div class="pane-title"><strong>Planned simulation</strong><span id="simulation-gate">not simulated</span></div>
+        <canvas id="canvas"></canvas>
+        <div class="view-tools">
+          <button data-view="orbit" class="on">Perspective</button>
+          <button data-view="top">Top</button>
+          <button data-view="side">Side</button>
+          <button data-view="oak">OAK camera</button>
+          <span class="sep"></span>
+          <label><input type="checkbox" id="show-path" checked> Path</label>
+        </div>
+        <div id="live-link" class="live-link" role="status" hidden></div>
+        <div id="toast" class="toast" hidden></div>
+      </div>
+      <div id="live-camera-stage" class="view-pane live-camera-stage">
+        <div class="pane-title"><strong>Physical arm · live camera</strong><span id="live-camera-state">read-only view</span></div>
+        <img id="live-camera-photo" alt="Connected OAK camera view of the physical robot arm">
+        <div class="live-camera-overlay">
+          <div id="live-execution-status">No physical task executing.</div>
+          <div id="live-servo-counts">Servos: not connected</div>
+          <div class="camera-disclaimer">Visual observation only · commanded counts are not position feedback</div>
+        </div>
+      </div>
     </div>
-    <div id="contacts" class="contacts" hidden></div>
-    <div id="toast" class="toast" hidden></div>
+    <section id="vision-readout" aria-live="polite">
+      <div class="vision-heading">
+        <strong>Camera observations</strong>
+        <button id="vision-scan">Scan camera</button>
+      </div>
+      <div id="vision-camera" class="vision-camera">Camera position: waiting for calibration.</div>
+      <div id="vision-blocks" class="vision-blocks">Blocks: waiting for a camera frame.</div>
+      <div id="vision-status" class="vision-status">Open this simulator through the local gateway to use the connected OAK camera.</div>
+    </section>
+    <section id="calibration-map" class="calibration-map" aria-labelledby="calibration-map-title">
+      <div class="calibration-map-heading">
+        <div>
+          <strong id="calibration-map-title">Recorded pose calibration</strong>
+          <span>mat position · camera marker · stored grip counts</span>
+        </div>
+        <span id="calibration-map-status">Waiting for a camera scan</span>
+      </div>
+      <div class="calibration-content">
+        <figure class="mat-reference-map">
+          <svg id="mat-reference-svg" viewBox="0 0 300 260" role="img" aria-labelledby="mat-map-title mat-map-description">
+            <title id="mat-map-title">Top-down calibration mat map</title>
+            <desc id="mat-map-description">Fixed marker IDs zero through five and recorded Pos left and right reference positions.</desc>
+          </svg>
+          <figcaption><span class="marker-key">● marker ID</span><span class="pose-key">◆ recorded pose</span><span class="seen-key">◎ seen by camera</span></figcaption>
+        </figure>
+        <div class="calibration-table-wrap">
+          <table>
+            <thead>
+              <tr><th>Pose</th><th>Mat reference</th><th>Nearest marker</th><th>Camera observation</th><th>Grip S1–S6</th></tr>
+            </thead>
+            <tbody id="calibration-map-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <p class="calibration-map-note">Camera marker coordinates are image pixels. Servo counts are observed stored grab poses, not validated safe limits. Pos3_right remains inferred.</p>
+    </section>
   </section>
 
   <div id="splitter" role="separator" aria-orientation="vertical" title="Drag to resize the sidebar (double-click: default width)"></div>
@@ -58,16 +113,60 @@
           <button id="go-park" class="big">PARK</button>
           <button id="go-straight" class="big">STRAIGHT UP</button>
         </div>
-        <p class="note">Collision-verified virtual positioning. Wait for <strong>idle</strong> before choosing another position.</p>
+        <p class="note">In <strong>Live Armed</strong> mode, HOME and PARK move the real arm to the controller's own definitions; STRAIGHT UP stays simulation-only. Collision checks are disabled during calibration; wait for <strong>idle</strong> before choosing another pose.</p>
       </section>
 
+      <section class="card task-status-card" aria-live="polite" aria-atomic="true">
+        <div class="task-status-heading">
+          <h2>Live task status</h2>
+          <span id="task-status-badge" class="task-state idle">idle</span>
+        </div>
+        <p id="task-status-name" class="task-status-name">No active task</p>
+        <dl class="task-status-grid">
+          <div><dt>Current position</dt><dd id="task-current">Waiting for a task</dd></div>
+          <div><dt>Destination</dt><dd id="task-destination">—</dd></div>
+        </dl>
+        <p id="task-status-message" class="task-status-message">No task is currently running.</p>
+        <div id="plan-panel" class="plan-panel" aria-live="off">
+          <div class="plan-head"><strong>Task plan</strong><span id="plan-phase" class="task-state idle">no plan</span></div>
+          <form id="plan-form" class="plan-form">
+            <input id="plan-text" type="text" placeholder="blue on orange · grab green · red to 5 15" autocomplete="off" aria-label="Task">
+            <button id="plan-submit" class="primary" type="submit">Plan &amp; simulate</button>
+          </form>
+          <p id="plan-summary" class="note"></p>
+          <div class="plan-progress" aria-hidden="true"><div id="plan-progress-bar"></div></div>
+          <p id="plan-step" class="note"></p>
+          <div class="row wrap plan-controls">
+            <label class="inline">Sim speed
+              <select id="plan-speed">
+                <option value="1">1× robot timing</option>
+                <option value="2">2×</option>
+                <option value="4">4×</option>
+              </select></label>
+            <button id="plan-replay" disabled>Replay</button>
+            <button id="plan-halt" disabled title="Simulation: stop it. Live: finish the current servo step, then hold the pose.">Halt</button>
+            <button id="plan-clear" disabled title="Stop the simulation, put the scene back as it was before the plan and reset the status, ready for another task">Stop &amp; clear</button>
+            <label class="inline" title="Translucent blue arm at the robot's commanded pose while Live Mode is connected"><input id="ghost-show" type="checkbox" checked> Live arm ghost</label>
+          </div>
+          <div class="plan-live">
+            <button id="plan-run-live" class="danger big" disabled>Run live</button>
+            <p id="plan-gate" class="note"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Task panel hidden; its startup wiring in app.js and demo.js is commented out too.
       <section class="card hero">
         <h2>Task</h2>
-        <p class="safety-strip">Simulation by default · real mode requires a same-origin robot API and explicit arming</p>
+        <p class="safety-strip">Calibration mode · IK and servo bounds only · no collision model</p>
         <label class="task-picker" for="task-preset">
           <span>Choose a simulation task</span>
           <select id="task-preset">
             <option value="">Select a task…</option>
+            <option value="Grab the orange cube">Grab orange cube</option>
+            <option value="Grab the green cube">Grab green cube</option>
+            <option value="Grab the blue cube">Grab blue cube</option>
+            <option value="Grab the yellow cube">Grab yellow cube</option>
             <option value="Move the red cube to the orange zone">Red cube → orange zone</option>
             <option value="Move the red cube to the blue zone">Red cube → blue zone</option>
             <option value="Move the green cube to the red zone">Green cube → red zone</option>
@@ -75,13 +174,23 @@
           </select>
         </label>
         <div class="row">
-          <input id="cmd" class="big" type="text" placeholder="blue on orange · grün auf blau · yellow to 0 14" autocomplete="off">
+          <input id="cmd" class="big" type="text" placeholder="grab green cube · blue on orange · yellow to 0 14" autocomplete="off">
         </div>
         <div class="row wrap">
-          <button id="plan-btn" class="primary big">Plan</button>
+          <button id="workflow-btn" class="primary big">Detect → plan → simulate</button>
+          <button id="plan-btn" class="big">Plan only</button>
           <button id="run-sim" class="big" disabled>Run in sim</button>
           <button id="demo-btn" class="accent big" title="Picks and stacks cubes with the planner, then drops cubes onto the tower to show the physics (simulation only)">▶ Demo: build a tower</button>
         </div>
+      (Task panel comment continues after the nested playback-panel comment.) -->
+        <!-- Real task playback panel hidden; its app.js references are commented out too.
+        <div class="execution-gate">
+          <label><input id="live-execution-confirm" type="checkbox" disabled> Automated real task playback unavailable during calibration</label>
+          <button id="run-live" class="danger big" disabled>Real playback disabled</button>
+          <p id="execution-gate-status" class="note">Automated physical task playback is disabled while no collision model is active.</p>
+        </div>
+        -->
+      <!-- Task panel, continued:
         <div id="plan-out" class="plan-out"></div>
         <details class="sub">
           <summary>Options</summary>
@@ -98,6 +207,7 @@
           </div>
         </details>
       </section>
+      -->
 
       <details open>
         <summary>Joints <small>PCA9685 counts at 60 Hz · simulated</small></summary>
@@ -105,8 +215,8 @@
         <div class="row wrap">
           <button id="power-on" title="Resume the simulated controller after a stop">Re-arm simulation</button>
           <label class="inline">Jog step <input id="step" type="number" min="1" max="100" value="10"></label>
-          <label class="inline"><input type="checkbox" id="stop-on-contact" checked> Stop on collision</label>
         </div>
+        <p class="note">No collision stopping is active. In Live Mode use small jog steps, keep the workspace clear and remain at the emergency stop.</p>
         <p class="note" id="pose-readout"></p>
       </details>
 

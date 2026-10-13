@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
+import { createPlanChannel } from './src/operational/plan-channel.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PHOTO_ROOT = path.join(path.dirname(ROOT), 'docs', 'images', 'photos');
@@ -24,10 +25,24 @@ function registerReferencePhotos(server) {
   });
 }
 
+// Claude's plan channel in development too (simulation only; there is no robot proxy here).
+function registerPlanChannel(server) {
+  const channel = createPlanChannel();
+  server.middlewares.use((request, response, next) => {
+    const pathname = new URL(request.url, 'http://vite').pathname;
+    if (!channel.handles(pathname)) return next();
+    channel.handle(request, response, pathname).catch(next);
+  });
+}
+
 export default defineConfig({
   plugins: [{
     name: 'local-reference-photos',
     configureServer: registerReferencePhotos,
     configurePreviewServer: registerReferencePhotos,
+  }, {
+    name: 'claude-plan-channel',
+    configureServer: registerPlanChannel,
+    configurePreviewServer: registerPlanChannel,
   }],
 });

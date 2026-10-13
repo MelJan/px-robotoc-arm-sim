@@ -58,8 +58,8 @@ export function countsArray(counts, spec = null) {
 /**
  * Build the millimetre planning/physics model from the canonical specification,
  * but use the preserved photo-fitted count-to-angle mapping. This is the bridge
- * that keeps collision capsules and planned trajectories on top of the detailed
- * visible model rather than silently switching to a second arm calibration.
+ * that keeps planning and physics data aligned with the detailed visible model
+ * rather than silently switching to a second arm calibration.
  */
 export function runtimeSpec(servos, cubes = null, spec = null) {
   spec = resolvedSpec(spec);

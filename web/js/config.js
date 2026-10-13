@@ -5,7 +5,7 @@
 //
 // The schematic (docs/images/arm-dimensions.png) is canon: link lengths, gripper
 // values, board and cube come from it unchanged. Sizes of servo bodies and brackets
-// are only for drawing and collision, taken from the photos and the MG996R datasheet.
+// are only for drawing and simulated cube interaction, taken from the photos and the MG996R datasheet.
 
 export const ARM = {
   H_S2: 9.6,    // board top to S2 axis
@@ -94,9 +94,6 @@ export const PLAN = {
   hover: 5.0,           // approach height above a cube on the mat
   hoverStacked: 2.0,    // above level 1 and higher
   descentStep: 1.0,     // cm between IK waypoints on a vertical descent
-  clearance: 0.05,      // collision tolerance, cm (0,5 mm)
-  transitMargin: 0.15,  // planned paths keep 1,5 mm between the arm (or a held cube) and other cubes
-  returnMargin: 0.6,    // HOME/PARK returns keep 6 mm from released cubes and stacks
 };
 
 export const COLOURS = {

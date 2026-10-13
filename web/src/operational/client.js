@@ -85,7 +85,7 @@ export class RobotArmClient extends EventTarget {
         try { data = JSON.parse(text); }
         catch { throw new Error(`${path} returned a non-JSON response`); }
       }
-      if (!response.ok) throw new Error(data.error || `${path} failed (${response.status})`);
+      if (!response.ok) throw Object.assign(new Error(data.error || `${path} failed (${response.status})`), { status: response.status });
       return data;
     } catch (error) {
       if (error?.name === 'AbortError') throw new Error(`${path} timed out after ${this.requestTimeoutMs} ms`);
@@ -150,6 +150,16 @@ export class RobotArmClient extends EventTarget {
     this.setMode('operational-armed');
   }
 
+  async adoptArmedSession({ operatorConfirmed = false } = {}) {
+    if (this.mode !== 'operational-disarmed') throw new Error('Operational mode must be selected before adopting an armed session');
+    if (!operatorConfirmed) throw new Error('Fresh operator confirmation is required');
+    await this.refresh();
+    if (this.state.busy) throw new Error('Robot API is busy');
+    if (!this.state.armed || this.state.outputs_off) throw new Error('Backend does not report an already armed session');
+    if (this.state.joints.some((joint) => joint.allowed === false)) throw new Error('All six joints must be enabled for operational control');
+    this.setMode('operational-armed');
+  }
+
   async refresh() { return this.setState(await this.request('state')); }
 
   async waitForIdle(timeoutMs = 60000) {
@@ -178,12 +188,13 @@ export class RobotArmClient extends EventTarget {
       }
       if (index > 0) {
         const changed = spec.joints.filter((joint) => pose[joint.id] !== path[index - 1][joint.id]);
-        if (changed.length !== 1) throw new Error('Operational playback accepts only verified single-servo steps');
+        if (changed.length !== 1) throw new Error('Operational playback accepts only single-servo calibration steps');
       }
     }
   }
 
-  async executeSingleJointPath(spec, path) {
+  /** shouldAbort is checked before each step; a halt keeps the arm holding its last confirmed pose. */
+  async executeSingleJointPath(spec, path, { onStep = null, shouldAbort = null } = {}) {
     if (this.mode !== 'operational-armed') throw new Error('Explicit operational arming is required');
     await this.refresh();
     if (!this.state.armed || this.state.outputs_off || this.state.busy) throw new Error('Backend is not armed and idle');
@@ -197,19 +208,49 @@ export class RobotArmClient extends EventTarget {
     }
     try {
       for (let index = 1; index < path.length; index += 1) {
+        if (shouldAbort?.()) return { aborted: true, completed: index - 1 };
         const joint = spec.joints.find((candidate) => path[index][candidate.id] !== path[index - 1][candidate.id]);
         const channel = Number(joint.id.slice(1)) - 1;
         const target = path[index][joint.id];
+        await onStep?.({ phase: 'sending', index, total: path.length - 1, joint: joint.id, channel, target, pose: { ...path[index] } });
         await this.post('move', { channel, target, first_clear: false });
         await this.waitForIdle();
         if (!this.state.armed || this.state.outputs_off || commandFor(this.state.commands, channel) !== target) {
           throw new Error(`${joint.id} command ${target} was not confirmed by the backend`);
         }
+        await onStep?.({ phase: 'confirmed', index, total: path.length - 1, joint: joint.id, channel, target, pose: { ...path[index] }, state: this.state });
       }
+      return { aborted: false, completed: path.length - 1 };
     } catch (error) {
       try { await this.emergencyStop(); } catch { this.setMode('fault-stopped'); }
       throw new Error(`Operational playback stopped: ${error.message}`);
     }
+  }
+
+  /** Move all six joints to the controller's own HOME or PARK definition and confirm it. */
+  async goPose(name) {
+    if (this.mode !== 'operational-armed') throw new Error('Explicit operational arming is required');
+    if (name !== 'HOME' && name !== 'PARK') throw new Error('Only the controller poses HOME and PARK can be sent');
+    await this.refresh();
+    if (!this.state.armed || this.state.outputs_off || this.state.busy) throw new Error('Backend is not armed and idle');
+    const key = name.toLowerCase();
+    const target = CHANNELS.map((channel) => this.state.joints.find((joint) => joint.channel === channel)?.[key]);
+    if (!target.every(Number.isInteger)) throw new Error(`Robot state does not report the controller's ${name} definition`);
+    let accepted = false;
+    try {
+      await this.post('go_pose', { name });
+      accepted = true;
+      await this.waitForIdle();
+      if (!this.state.armed || this.state.outputs_off || CHANNELS.some((channel) => commandFor(this.state.commands, channel) !== target[channel])) {
+        throw new Error(`${name} [${target.join(', ')}] was not confirmed by the backend`);
+      }
+    } catch (error) {
+      // A 4xx refusal (gateway policy or controller guard) started no motion; stopping would only drop the holding arm.
+      if (!accepted && error.status >= 400 && error.status < 500) throw new Error(`${name} refused: ${error.message}`);
+      try { await this.emergencyStop(); } catch { this.setMode('fault-stopped'); }
+      throw new Error(`${name} stopped: ${error.message}`);
+    }
+    return this.state;
   }
 
   async powerOff() {

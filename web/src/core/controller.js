@@ -28,7 +28,7 @@ export class TrajectoryPlayer {
       const frame = (now) => {
         const progress = reduced ? 1 : Math.min(1, (now - started) / duration);
         const eased = progress < 0.5 ? 4 * progress ** 3 : 1 - ((-2 * progress + 2) ** 3) / 2;
-        if (!this.applyCounts(interpolateCounts(this.spec, start, end, eased))) { this.frame = null; reject(new Error('Playback stopped by collision verification')); return; }
+        if (!this.applyCounts(interpolateCounts(this.spec, start, end, eased))) { this.frame = null; reject(new Error('Playback stopped by an invalid servo command')); return; }
         if (progress < 1) this.frame = requestAnimationFrame(frame);
         else { this.frame = null; resolve(); }
       };

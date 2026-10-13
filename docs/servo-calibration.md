@@ -57,6 +57,19 @@ Home is 650 = max grip.
 The "Opening" column is the number written before the tick value (9 and 8,5).
 No unit on the sheet, probably cm of gripper opening.
 
+## Coordinate-to-count observations
+
+Machine-readable candidate anchors are stored in
+`web/public/calibration-observations.json`. They are kept separate from the
+active calibration in `arm-spec.json` until the tool point, height and
+orientation are measured and the observation is independently repeated.
+
+| Date | Mat X | Mat Y | S1 | S2 | S3 | S4 | S5 | S6 | Status |
+|------|------:|------:|---:|---:|---:|---:|---:|---:|--------|
+| 2026-10-13 | 50 mm | 200 mm | 370 | 377 | 393 | 200 | 270 | 550 | User-identified candidate; controller-commanded counts, not measured feedback |
+| 2026-10-13 | 80 mm | 0 mm | 330 | 540 | 580 | 195 | 480 | 650 | User-supplied XY with read-only controller-commanded counts; no camera or block observation. |
+| 2026-10-13 | 200 mm | 0 mm | 320 | 427 | 403 | 220 | 250 | 550 | HOME; user-supplied XY and read-only counts matching the controller's configured HOME. |
+
 ## Open questions
 
 - S1: was 85° meant, or 90°? The scaled 275 ticks assumes the 85° reading is right.

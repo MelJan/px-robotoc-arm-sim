@@ -4,6 +4,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { connectionInfo, proxyDecision } from './src/operational/gateway.js';
+import { createPlanChannel } from './src/operational/plan-channel.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const STATIC_ROOT = path.join(ROOT, 'dist');
@@ -20,6 +21,39 @@ const TYPES = {
   '.jpg': 'image/jpeg',
   '.wasm': 'application/wasm',
 };
+
+const TASK_STATES = new Set(['idle', 'planning', 'ready', 'waiting', 'moving', 'complete', 'blocked', 'stopped', 'error']);
+const DEFAULT_TASK_STATUS = Object.freeze({
+  revision: 0,
+  task: 'No active task',
+  current: 'Waiting for a task',
+  destination: '—',
+  status: 'idle',
+  message: 'No task is currently running.',
+  updatedAt: null,
+});
+
+function taskText(value, field, maximum) {
+  if (typeof value !== 'string') throw new Error(`${field} must be a string`);
+  const text = value.trim();
+  if (!text || text.length > maximum) throw new Error(`${field} must contain 1..${maximum} characters`);
+  return text;
+}
+
+export function updateTaskStatus(previous, input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Task status must be a JSON object');
+  const status = taskText(input.status, 'status', 20).toLowerCase();
+  if (!TASK_STATES.has(status)) throw new Error(`Unknown task status: ${status}`);
+  return {
+    revision: previous.revision + 1,
+    task: taskText(input.task, 'task', 180),
+    current: taskText(input.current, 'current', 300),
+    destination: taskText(input.destination, 'destination', 300),
+    status,
+    message: taskText(input.message, 'message', 500),
+    updatedAt: new Date().toISOString(),
+  };
+}
 
 function sendJson(response, status, data) {
   response.writeHead(status, {
@@ -114,11 +148,31 @@ async function proxy(request, response, controller, allowMotion, pathname) {
 }
 
 export function createGateway({ controller = null, allowMotion = false } = {}) {
+  let taskStatus = { ...DEFAULT_TASK_STATUS };
+  const planChannel = createPlanChannel();
   return http.createServer(async (request, response) => {
     try {
       const url = new URL(request.url, 'http://gateway');
+      if (planChannel.handles(url.pathname)) return await planChannel.handle(request, response, url.pathname);
       if (url.pathname === '/connection-info' && request.method === 'GET') {
         return sendJson(response, 200, connectionInfo(controller, allowMotion));
+      }
+      if (url.pathname === '/simulator/task-status' && request.method === 'GET') {
+        return sendJson(response, 200, taskStatus);
+      }
+      if (url.pathname === '/simulator/task-status' && request.method === 'POST') {
+        const origin = request.headers.origin;
+        const expectedOrigin = `http://${request.headers.host}`;
+        if (origin && origin !== expectedOrigin) return sendJson(response, 403, { error: 'Task status updates must be same-origin' });
+        if (!String(request.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
+          return sendJson(response, 415, { error: 'Content-Type application/json required' });
+        }
+        let input;
+        try { input = JSON.parse((await readBody(request)).toString('utf8')); }
+        catch (error) { return sendJson(response, 400, { error: `Invalid task status: ${error.message}` }); }
+        try { taskStatus = updateTaskStatus(taskStatus, input); }
+        catch (error) { return sendJson(response, 400, { error: error.message }); }
+        return sendJson(response, 200, taskStatus);
       }
       if (url.pathname.startsWith('/api/')) return await proxy(request, response, controller, allowMotion, url.pathname);
       if (!['GET', 'HEAD'].includes(request.method)) return sendJson(response, 405, { error: 'GET or HEAD required' });
