@@ -15,6 +15,13 @@ import { project, eigSym, solve } from './calib.js';
 import { detectMarkers } from './aruco.js';
 
 
+/**
+ * How much a camera's pixels count in a fit: 1 / its calibration error (px rms from the mat markers),
+ * at most 2. The OAK (about 0,4 px) then counts several times as much as the webcam (about 2 px), and
+ * together they still give the parallax that one camera alone lacks for depth.
+ */
+export const camWeight = cal => 1 / Math.max(0.5, Number.isFinite(cal?.rms) ? cal.rms : 1);
+
 /** Board frame (cm) -> camera table frame (mm). The inverse of camview.js tableToBoard. */
 export const boardToTable = ([x, y, z], d = MAT.sToEdge) => [(y - d) * 10, -x * 10, z * 10];
 export const tableToBoardPt = ([X, Y, Z], d = MAT.sToEdge) => [-Y / 10, X / 10 + d, Z / 10];
@@ -50,8 +57,17 @@ export const projectBoard = (cal, P, d = MAT.sToEdge) => project(cal, boardToTab
  * Tag corners in an image (ImageData), trying a few threshold settings like OpenCV does.
  * Returns { [id]: { corners: [[u,v] x 4], centre: [u,v] } } for the arm tags found.
  */
-export function detectArmTags(img, ids = ARM_TAGS.filter(t => t.id != null).map(t => t.id)) {
+export function detectArmTags(img, ids = ARM_TAGS.filter(t => t.id != null).map(t => t.id), { roi = null, zoom = 2 } = {}) {
   const out = {};
+  // small tags (under about 25 px) read better enlarged: first search a 2x crop around the arm
+  if (roi) {
+    const [x0, y0, x1, y1] = [Math.max(0, Math.floor(roi[0])), Math.max(0, Math.floor(roi[1])), Math.min(img.width, Math.ceil(roi[2])), Math.min(img.height, Math.ceil(roi[3]))];
+    if (x1 - x0 > 16 && y1 - y0 > 16) {
+      const crop = upscale(img, x0, y0, x1, y1, zoom);
+      for (const [id, t] of Object.entries(detectArmTags(crop, ids)))
+        out[id] = { corners: t.corners.map(([x, y]) => [x0 + (x + 0.5) / zoom - 0.5, y0 + (y + 0.5) / zoom - 0.5]), centre: [x0 + (t.centre[0] + 0.5) / zoom - 0.5, y0 + (t.centre[1] + 0.5) / zoom - 0.5] };
+    }
+  }
   for (const [window, offset] of [[15, 3], [31, 7], [31, 3], [61, 7]]) {
     const { markers } = detectMarkers(img, { family: '36h11', ids, window, offset, maxArea: img.width * img.height / 4 });
     for (const [id, q] of Object.entries(markers)) if (!out[id]) {
@@ -60,6 +76,20 @@ export function detectArmTags(img, ids = ARM_TAGS.filter(t => t.id != null).map(
     if (ids.every(id => out[id])) break;
   }
   return out;
+}
+/** Bilinear zoom of a region of an RGBA image. */
+function upscale(img, x0, y0, x1, y1, z) {
+  const w = Math.round((x1 - x0) * z), h = Math.round((y1 - y0) * z), data = new Uint8ClampedArray(w * h * 4), src = img.data, W = img.width;
+  for (let y = 0; y < h; y++) {
+    const sy = Math.min(img.height - 1.001, Math.max(0, y0 + (y + 0.5) / z - 0.5)), iy = Math.floor(sy), fy = sy - iy;
+    for (let x = 0; x < w; x++) {
+      const sx = Math.min(W - 1.001, Math.max(0, x0 + (x + 0.5) / z - 0.5)), ix = Math.floor(sx), fx = sx - ix;
+      const i00 = 4 * (iy * W + ix), i01 = i00 + 4, i10 = i00 + 4 * W, i11 = i10 + 4, o = 4 * (y * w + x);
+      for (let c = 0; c < 3; c++) data[o + c] = (src[i00 + c] * (1 - fx) + src[i01 + c] * fx) * (1 - fy) + (src[i10 + c] * (1 - fx) + src[i11 + c] * fx) * fy;
+      data[o + 3] = 255;
+    }
+  }
+  return { width: w, height: h, data };
 }
 function lineIntersection(a, b, c, d) {
   const den = (a[0] - b[0]) * (c[1] - d[1]) - (a[1] - b[1]) * (c[0] - d[0]);
@@ -79,7 +109,9 @@ export function triangulate(views) {
     const P = [0, 1, 2].map(i => [...cal.R[i], cal.t[i]]);
     const K = [[cal.f, 0, cal.cx], [0, cal.f, cal.cy], [0, 0, 1]];
     const KP = K.map(r => [0, 1, 2, 3].map(j => r[0] * P[0][j] + r[1] * P[1][j] + r[2] * P[2][j]));
-    A.push(KP[0].map((v, j) => uv[0] * KP[2][j] - v), KP[1].map((v, j) => uv[1] * KP[2][j] - v));
+    // each row scaled by the camera's weight, and by 1/depth so it is an error in pixels
+    const w = camWeight(cal) / Math.max(1e-6, KP[2].slice(0, 3).reduce((s, v) => s + v * v, 0) ** 0.5);
+    A.push(KP[0].map((v, j) => w * (uv[0] * KP[2][j] - v)), KP[1].map((v, j) => w * (uv[1] * KP[2][j] - v)));
   }
   // smallest eigenvector of A^T A, after scaling the unknowns to metres-ish for conditioning
   const s = 1000, Asc = A.map(r => [r[0] * s, r[1] * s, r[2] * s, r[3]]);
@@ -99,7 +131,7 @@ export function triangulate(views) {
  *   useCorners: also fit the four corners (needs the tags' "up" right; the centres alone do not)
  * Returns { angles, rms (px), residuals: [{ cam, id, err }], points: { [id]: board-frame centre } }.
  */
-export function fitArmPose(observations, { init, free = null, useCorners = false, prior = 90, d = MAT.sToEdge, iterations = 100 } = {}) {
+export function fitArmPose(observations, { init, free = null, useCorners = false, shifts = {}, prior = 90, d = MAT.sToEdge, iterations = 100 } = {}) {
   const a0 = { s1: 0, s2: 0, s3: 0, s4: 0, s5: 0, ...init };
   const tags = Object.fromEntries(ARM_TAGS.filter(t => t.id != null).map(t => [t.id, t]));
   const obs = [];
@@ -107,7 +139,8 @@ export function fitArmPose(observations, { init, free = null, useCorners = false
     for (const [id, t] of Object.entries(o.tags || {})) {
       if (!tags[id]) continue;
       obs.push({ ci, cal: o.cal, tag: tags[id], k: -1, uv: t.centre });
-      if (useCorners && t.corners) t.corners.forEach((uv, k) => obs.push({ ci, cal: o.cal, tag: tags[id], k, uv }));
+      // corners turned by the quarter turns the tag is stuck on with (shifts[id], see rigidtrack.js)
+      if (useCorners && t.corners) t.corners.forEach((_, k) => obs.push({ ci, cal: o.cal, tag: tags[id], k, uv: t.corners[(k + (shifts[id] || 0)) % 4] }));
     }
   });
   if (obs.length < 2) throw new Error(`too few tag observations (${obs.length}); need a tag in at least two views`);
@@ -120,7 +153,8 @@ export function fitArmPose(observations, { init, free = null, useCorners = false
       if (!cache.has(o.tag.id)) cache.set(o.tag.id, tagPoints(o.tag, a, frames));
       const tp = cache.get(o.tag.id), P = o.k < 0 ? tp.centre : tp.corners[o.k];
       const q = projectBoard(o.cal, P, d);
-      r.push(q[0] - o.uv[0], q[1] - o.uv[1]);
+      const w = camWeight(o.cal);
+      r.push(w * (q[0] - o.uv[0]), w * (q[1] - o.uv[1]));
     }
     for (const j of free) r.push((a[j] - a0[j]) / prior);   // weak pull to the start (1 px per `prior` degrees)
     return r;

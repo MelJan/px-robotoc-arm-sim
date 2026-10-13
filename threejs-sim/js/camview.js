@@ -12,6 +12,9 @@ import { detectCubes } from './detect.js';
 import { detectMarkers } from './aruco.js';
 import { calFromLookAt, detectArmTags, triangulate, fitArmPose, tagPoints, projectBoard, boardToTable } from './armtrack.js';
 import { locateCubes } from './locate3d.js';
+import { fitPartPose, learnTagLayout } from './rigidtrack.js';
+import { armShapes, LINK } from './collision.js';
+import { fk } from './kinematics.js';
 import { CUBE } from './config.js';
 
 const W = CAMERA.w, H = CAMERA.h;
@@ -65,35 +68,40 @@ export function defaultCalibration() {
  * Arm tracking reads the AprilTags in every camera that has a frame and combines them (armtrack.js).
  */
 export function initCameraTab(ctx) {
-  const simCanvas = $('cam-sim'), overlay = $('cam-overlay');
-  const renderer = new THREE.WebGLRenderer({ canvas: simCanvas, antialias: true });
+  const glCanvas = document.createElement('canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(1);
   renderer.setSize(960, 540, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const cam3 = new THREE.PerspectiveCamera();
-  overlay.width = 1280; overlay.height = 720;
-  const g = overlay.getContext('2d');
-
-  // ---- one state per camera; the first one uses the existing <img id="cam-photo">
+  const fullscreen = el => (document.fullscreenElement === el ? document.exitFullscreen() : el.requestFullscreen?.()).catch?.(() => {});
+  // ---- one state and one stage per camera, side by side (the first stage is in the HTML)
   const states = {};
   CAMERAS.forEach((c, i) => {
-    let img = i === 0 ? $('cam-photo') : null;
-    if (!img) {
-      img = document.createElement('img'); img.alt = ''; img.className = 'cam-frame';
-      img.style.opacity = $('cam-photo').style.opacity; img.hidden = true;
-      $('cam-photo').after(img);
+    let stage = $('cam-stage-0');
+    if (i > 0) {
+      stage = document.createElement('div'); stage.className = 'cam-stage';
+      stage.innerHTML = '<canvas width="960" height="540"></canvas><img alt="" style="opacity:0.5"><canvas></canvas>';
+      $('cam-stages').append(stage);
     }
-    states[c.id] = { cam: c, img, cal: ctx.cals[c.id], points: c.id === 'oak' ? savedPairs() : [], source: c.id === 'oak' ? 'saved' : 'live',
-      markerQuads: {}, detections: [], tags: {}, videoTimer: null, frames: 0 };
+    const [sim, overlay] = stage.querySelectorAll('canvas'), img = stage.querySelector('img');
+    overlay.width = 1280; overlay.height = 720;
+    const cap = document.createElement('div'); cap.className = 'cam-cap'; cap.textContent = c.name; stage.append(cap);
+    const fsb = document.createElement('button'); fsb.className = 'cam-fs'; fsb.title = 'Full screen (Esc to leave)'; fsb.textContent = '⛶';
+    fsb.onclick = e => { e.stopPropagation(); fullscreen(stage); };
+    stage.append(fsb);
+    states[c.id] = { cam: c, stage, img, sim, simG: sim.getContext('2d'), overlay, g: overlay.getContext('2d'), cal: ctx.cals[c.id],
+      points: c.id === 'oak' ? savedPairs() : [], source: c.id === 'oak' ? 'saved' : 'live', markerQuads: {}, detections: [], tags: {}, videoTimer: null, frames: 0 };
   });
   let S = states[CAMERAS[0].id];
   $('cam-select').innerHTML = CAMERAS.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
   const apiUrl = (st, file) => `${ctx.linkBase()}${st.cam.api}/${file}`;
 
   let picking = null;                    // marker id waiting for a click
-  const visible = () => !$('tab-camera').hidden;
+  // the camera views render when the Camera tab is open or when they fill the main view ("Cameras")
+  const visible = () => !$('tab-camera').hidden || !$('cam-main').hidden;
 
   // ---- frame sources (all read only), per camera
   //   saved  the OAK's frame from 2026-10-12 in the repo
@@ -168,12 +176,12 @@ export function initCameraTab(ctx) {
     };
   }
   $('cam-opacity').oninput = () => { for (const st of Object.values(states)) st.img.style.opacity = $('cam-opacity').value / 100; };
-  for (const id of ['cam-show-sim', 'cam-show-marks', 'cam-show-grid']) $(id).onchange = () => { simCanvas.style.visibility = $('cam-show-sim').checked ? 'visible' : 'hidden'; draw(); };
+  for (const id of ['cam-show-sim', 'cam-show-marks', 'cam-show-grid']) $(id).onchange = () => { for (const st of Object.values(states)) st.sim.style.visibility = $('cam-show-sim').checked ? 'visible' : 'hidden'; draw(); };
 
   // ---- switching the camera shown
   function select(id) {
     S = states[id];
-    for (const st of Object.values(states)) st.img.hidden = st !== S;
+    for (const st of Object.values(states)) st.stage.classList.toggle('sel', st === S);
     $('cam-select').value = id;
     $('cam-title').textContent = S.cam.name;
     $('cam-source').value = S.source;
@@ -197,9 +205,11 @@ export function initCameraTab(ctx) {
   $('cam-skip').onclick = () => { if (picking !== null) { S.points.push({ id: picking, skipped: true }); nextPick(); } };
   $('cam-clear').onclick = () => { S.points = []; picking = null; $('cam-pick-hint').textContent = ''; draw(); };
   $('cam-use-saved').onclick = () => { if (S.cam.id !== 'oak') { ctx.toast('The saved corners are from the OAK'); return; } $('cam-source').value = 'saved'; loadSource(); };
-  overlay.addEventListener('click', e => {
+  // a click on a camera selects it for the controls below; while picking, it sets a marker centre
+  for (const st of Object.values(states)) st.overlay.addEventListener('click', e => {
+    if (st !== S) { select(st.cam.id); return; }
     if (picking === null) return;
-    const r = overlay.getBoundingClientRect();
+    const r = st.overlay.getBoundingClientRect();
     const uv = [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H];
     const [X, Y] = markerCentre(picking);
     S.points.push({ id: picking, X: [X, Y, 0], uv });
@@ -351,14 +361,18 @@ export function initCameraTab(ctx) {
   };
 
   // ---- arm tracking: the AprilTags on the arm in every camera with a frame, combined (armtrack.js)
-  let lastArm = null;
+  let lastArm = null, parts = {}, lastViews = [];   // last joint fit, rigid part fits and the views they came from
   function trackArm({ quiet = false } = {}) {
     const views = [];
     for (const st of Object.values(states)) {
       const img = grabFrame(st);
       if (!img) { st.tags = {}; continue; }
       const sx = W / img.width, sy = H / img.height;
-      const found = detectArmTags(img);
+      // where the tags should be (commanded pose), widely padded: searched again 2x enlarged
+      const a0 = ctx.armAngles(), uvs = ARM_TAGS.map(t => projectBoard(st.cal, tagPoints(t, a0).centre)).map(([u, v]) => [u / sx, v / sy]);
+      const pad = 0.18 * img.width;
+      const roi = [Math.min(...uvs.map(p => p[0])) - pad, Math.min(...uvs.map(p => p[1])) - pad, Math.max(...uvs.map(p => p[0])) + pad, Math.max(...uvs.map(p => p[1])) + pad];
+      const found = detectArmTags(img, undefined, { roi });
       st.tags = Object.fromEntries(Object.entries(found).map(([id, t]) => [id, { corners: t.corners.map(([x, y]) => [x * sx, y * sy]), centre: [t.centre[0] * sx, t.centre[1] * sy] }]));
       if (Object.keys(st.tags).length) views.push({ st, cal: st.cal, tags: st.tags });
     }
@@ -370,16 +384,32 @@ export function initCameraTab(ctx) {
       const v = views.filter(x => x.tags[t.id]).map(x => ({ cal: x.cal, uv: x.tags[t.id].centre }));
       if (v.length >= 2) { const r = triangulate(v); tri[t.id] = { board: tableToBoard(r.X), rms: r.rms }; }
     }
+    // each rigid part on its own, from all its tags in all cameras (rigidtrack.js), started from the commanded pose
+    const f0 = fk(ctx.armAngles());
+    parts = {};
+    for (const link of Object.keys(ARM_PARTS)) {
+      try { const pf = fitPartPose(link, views, { init: f0[link] }); if (pf) parts[link] = pf; } catch (e) { lines.push(`${link}: ${e.message}`); }
+    }
+    const shifts = Object.assign({}, ...Object.values(parts).map(p => p.shifts));
     try {
       if (views.length >= 2 || views.reduce((n, x) => n + Object.keys(x.tags).length, 0) >= 2) {
-        result = fitArmPose(views, { init: ctx.armAngles(), useCorners: $('cam-arm-corners').checked });
+        result = fitArmPose(views, { init: ctx.armAngles(), useCorners: $('cam-arm-corners').checked, shifts });
         result.triangulated = tri;
       }
     } catch (e) { lines.push(e.message); }
     lastArm = result;
+    lastViews = views;
+    // how far the arm model (joint chain) is from each part as its tags alone put it
+    const fit = result ? fk(result.angles) : null;
+    const partLines = Object.values(parts).map(p => {
+      let dev = '';
+      if (fit) { const q = fit[p.link]; let tr = 0; for (let i = 0; i < 9; i++) tr += q.R[i] * p.R[i];
+        dev = ` · arm fit ${Math.hypot(...q.p.map((v, i) => v - p.p[i])).toFixed(1)} cm, ${(Math.acos(Math.max(-1, Math.min(1, (tr - 1) / 2))) * 180 / Math.PI).toFixed(1)}° away`; }
+      return `<div><b style="color:${partCss(p.link)}">${ARM_PARTS[p.link].name}</b>: ${p.views} tag view${p.views > 1 ? 's' : ''} from ${p.cameras} camera${p.cameras > 1 ? 's' : ''}, ${p.rms.toFixed(1)} px${dev}${Object.entries(p.shifts).filter(([, k]) => k).map(([id, k]) => ` · tag ${id} stuck on turned ${k * 90}°`).join('')}</div>`;
+    });
     ctx.onArmTrack(result);
     const a0 = ctx.armAngles();
-    $('cam-arm-out').innerHTML = legend() + lines.map(l => `<div>${l}</div>`).join('') +
+    $('cam-arm-out').innerHTML = legend() + lines.map(l => `<div>${l}</div>`).join('') + partLines.join('') +
       Object.entries(tri).map(([id, t]) => `<div>tag ${id} from ${views.filter(x => x.tags[id]).length} cameras: x ${t.board[0].toFixed(1)} · y ${t.board[1].toFixed(1)} · z ${t.board[2].toFixed(1)} cm (${t.rms.toFixed(1)} px)</div>`).join('') +
       (result ? `<table class="params"><tr><th></th>${['S1', 'S2', 'S3', 'S4', 'S5'].map(s => `<th>${s}</th>`).join('')}</tr>
         <tr><th>tracked</th>${['s1', 's2', 's3', 's4', 's5'].map(j => `<td>${result.free.includes(j) ? `${result.angles[j].toFixed(1)}°` : '–'}</td>`).join('')}</tr>
@@ -391,6 +421,18 @@ export function initCameraTab(ctx) {
     return result;
   }
   $('cam-arm').onclick = () => trackArm();
+  // Measures where each seen tag sits on its part, relative to the part's fitted pose, and uses that from
+  // now on (this browser session). Copy the numbers into config.js ARM_TAGS to keep them.
+  $('cam-arm-learn').onclick = () => {
+    if (!Object.keys(parts).length) { ctx.toast('Track the arm first'); return; }
+    const out = {};
+    for (const p of Object.values(parts)) Object.assign(out, learnTagLayout(p.link, lastViews, p, p.shifts));
+    for (const [id, l] of Object.entries(out)) Object.assign(tagById(id), l);
+    const text = JSON.stringify(out, null, 1);
+    try { navigator.clipboard.writeText(text); } catch { /* shown below */ }
+    $('cam-arm-out').insertAdjacentHTML('beforeend', `<div><b>Tag layout measured</b> (used now; copied for config.js ARM_TAGS):</div><pre class="api">${text}</pre>`);
+    ctx.log(`tag layout measured for tags ${Object.keys(out).join(', ')}`, 'ok');
+  };
   /** Table: tag, where it is, the rigid part, what moves it, which cameras saw it in the last round. */
   function legend() {
     const seen = t => Object.values(states).filter(st => t.id != null && st.tags[t.id]).map(st => st.cam.name.split(' ')[0]).join(', ') || '–';
@@ -402,8 +444,28 @@ export function initCameraTab(ctx) {
   $('cam-arm-ghost').onchange = () => ctx.onArmTrack($('cam-arm-ghost').checked ? lastArm : null);
 
   // ---- drawing (the camera shown)
-  function draw() {
-    const cal = S.cal;
+  /** A collision shape (collision.js) as a wireframe through the projection P. */
+  function wire(g, sh, P) {
+    const seg = (a, b) => { const p = P(a), q = P(b); g.beginPath(); g.moveTo(...p); g.lineTo(...q); g.stroke(); };
+    if (sh.kind === 'box') {
+      const R = sh.R, h = sh.h, C = [];
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+        const v = [sx * h[0], sy * h[1], sz * h[2]];
+        C.push([0, 1, 2].map(i => sh.c[i] + R[3 * i] * v[0] + R[3 * i + 1] * v[1] + R[3 * i + 2] * v[2]));
+      }
+      for (const [a, b] of [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]]) seg(C[a], C[b]);
+    } else if (sh.kind === 'capsule') {
+      const d = sh.b.map((v, i) => v - sh.a[i]), L = Math.hypot(...d), u = d.map(v => v / L);
+      const t = Math.abs(u[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+      const e1 = [u[1] * t[2] - u[2] * t[1], u[2] * t[0] - u[0] * t[2], u[0] * t[1] - u[1] * t[0]], n1 = Math.hypot(...e1);
+      const x = e1.map(v => v / n1), y = [u[1] * x[2] - u[2] * x[1], u[2] * x[0] - u[0] * x[2], u[0] * x[1] - u[1] * x[0]];
+      for (const k of [0, 1, 2, 3]) { const a = k * Math.PI / 2, o = x.map((v, i) => sh.r * (Math.cos(a) * v + Math.sin(a) * y[i])); seg(sh.a.map((v, i) => v + o[i]), sh.b.map((v, i) => v + o[i])); }
+    }
+  }
+  function draw() { for (const st of Object.values(states)) drawOne(st); params(); }
+  function drawOne(st) {
+    const g = st.g;
+    const cal = st.cal;
     g.clearRect(0, 0, W, H);
     const P = X => project(cal, X);
     if ($('cam-show-grid').checked) {
@@ -420,13 +482,13 @@ export function initCameraTab(ctx) {
     if ($('cam-show-marks').checked) {
       for (const id of [0, 1, 2, 3, 4, 5]) {
         const q = MARKER_CORNERS[id].map(p => P([p[0], p[1], 0]));
-        g.lineWidth = picking === id ? 4 : 2; g.strokeStyle = picking === id ? '#19d36b' : 'rgba(255,170,0,0.95)';
+        g.lineWidth = (st === S && picking === id) ? 4 : 2; g.strokeStyle = (st === S && picking === id) ? '#19d36b' : 'rgba(255,170,0,0.95)';
         g.beginPath(); q.forEach((p, i) => (i ? g.lineTo(...p) : g.moveTo(...p))); g.closePath(); g.stroke();
         const c = P([...markerCentre(id), 0]);
         g.fillStyle = '#ffb000'; g.font = 'bold 20px system-ui'; g.fillText(`ID ${id}`, c[0] + 22, c[1] - 18);
       }
       // measured points (circles) and their reprojection error (red line, 5x)
-      for (const p of usable()) {
+      for (const p of usable(st)) {
         const r = P(p.X);
         g.strokeStyle = '#e0281e'; g.lineWidth = 2;
         g.beginPath(); g.moveTo(...p.uv); g.lineTo(p.uv[0] + 5 * (r[0] - p.uv[0]), p.uv[1] + 5 * (r[1] - p.uv[1])); g.stroke();
@@ -446,20 +508,29 @@ export function initCameraTab(ctx) {
         g.strokeStyle = partCss(t.link); g.lineWidth = 2; g.setLineDash(t.id == null ? [3, 3] : []);
         g.beginPath(); q.forEach((p, i) => (i ? g.lineTo(...p) : g.moveTo(...p))); g.closePath(); g.stroke(); g.setLineDash([]);
         const c = projectBoard(cal, tp.centre); g.fillStyle = partCss(t.link); g.font = 'bold 15px system-ui';
-        g.fillText(`${t.id ?? 'reprint'}${showParts ? ` → ${t.link === 'wrist' ? 'wrist (S1–S4)' : 'gripper (S1–S5)'}` : ''}`, c[0] + 14, c[1] - 10);
+        if (showParts) g.fillText(`${t.id ?? '?'}`, c[0] - 8, c[1] - 14);   // model position: part colour, id only
       }
     }
     // markers as detected in the frame (green), with their first corner marked
-    for (const [id, q] of Object.entries(S.markerQuads)) {
+    for (const [id, q] of Object.entries(st.markerQuads)) {
       g.strokeStyle = '#19d36b'; g.lineWidth = 2.5; g.beginPath(); q.forEach((p, i) => (i ? g.lineTo(...p) : g.moveTo(...p))); g.closePath(); g.stroke();
       g.fillStyle = '#19d36b'; g.beginPath(); g.arc(...q[0], 4, 0, 2 * Math.PI); g.fill();
-      g.font = 'bold 16px system-ui'; g.fillText(`found ${id}`, q[2][0] + 6, q[2][1] + 16);
+      g.font = 'bold 13px system-ui'; g.fillText(`${id}`, q[2][0] + 6, q[2][1] + 16);
+    }
+    // each rigid part where its tags alone put it: its shapes as a wireframe, in the part's colour
+    if ($('cam-show-bodies').checked) for (const p of Object.values(parts)) {
+      const frames = fk(ctx.armAngles()); frames[p.link] = { R: p.R, p: p.p };
+      const ids = p.link === 'wrist' ? [LINK.wrist] : [LINK.hand, LINK.fingerL];
+      g.strokeStyle = partCss(p.link); g.lineWidth = 2;
+      for (const sh of armShapes(frames, 0).filter(x => ids.includes(x.link))) wire(g, sh, P3 => projectBoard(cal, P3));
+      const c = projectBoard(cal, p.p);
+      g.fillStyle = partCss(p.link); g.font = 'bold 15px system-ui'; g.fillText(`${p.link === 'wrist' ? 'wrist' : 'gripper'} (${p.rms.toFixed(1)} px)`, c[0] + 16, c[1] + 4);
     }
     // arm tags as detected (cyan) and where the tracked pose puts them (white cross)
-    for (const [id, t] of Object.entries(S.tags)) {
+    for (const [id, t] of Object.entries(st.tags)) {
       g.strokeStyle = '#19c8e0'; g.lineWidth = 3; g.beginPath(); t.corners.forEach((p, i) => (i ? g.lineTo(...p) : g.moveTo(...p))); g.closePath(); g.stroke();
       const tg = tagById(id);
-      g.fillStyle = '#19c8e0'; g.font = 'bold 16px system-ui'; g.fillText(`tag ${id}${tg ? ` · ${tg.on}` : ' (not on the arm)'}`, t.corners[2][0] + 6, t.corners[2][1] + 16);
+      g.fillStyle = '#19c8e0'; g.font = 'bold 16px system-ui'; g.fillText(tg ? `${id}` : `${id}?`, t.corners[2][0] + 4, t.corners[2][1] + 14);
       if (lastArm?.points[id]) {
         const c = projectBoard(cal, lastArm.points[id]);
         g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.moveTo(c[0] - 7, c[1]); g.lineTo(c[0] + 7, c[1]); g.moveTo(c[0], c[1] - 7); g.lineTo(c[0], c[1] + 7); g.stroke();
@@ -475,14 +546,13 @@ export function initCameraTab(ctx) {
       g.stroke();
       const m = P(c.X); g.fillStyle = '#fff'; g.font = 'bold 16px system-ui'; g.fillText(`${c.colour} z ${(c.X[2] / 10).toFixed(1)}`, m[0] + 10, m[1]);
     }
-    for (const d of cubes3d.length ? [] : S.detections) {
+    for (const d of cubes3d.length ? [] : st.detections) {
       g.strokeStyle = d.ok ? COLOR_CSS[d.colour] : '#888'; g.lineWidth = 3; g.setLineDash(d.ok ? [] : [6, 4]);
       const [a, b, c2, e] = d.bbox; g.strokeRect(a - 4, b - 4, c2 - a + 8, e - b + 8); g.setLineDash([]);
       const p = project(cal, [d.X, d.Y, 0]);
       g.fillStyle = '#fff'; g.beginPath(); g.arc(p[0], p[1], 5, 0, 2 * Math.PI); g.fill();
       g.font = 'bold 18px system-ui'; g.fillStyle = '#fff'; g.fillText(d.colour + (d.ok ? '' : ' ?'), a, b - 10);
     }
-    params();
   }
 
   function params() {
@@ -503,13 +573,16 @@ export function initCameraTab(ctx) {
       `<tr><th>Homography</th><td colspan="2"><code>${cal.H ? cal.H.map(r => r.map(v => v.toPrecision(4)).join('  ')).join('<br>') : '–'}</code></td></tr>`;
   }
 
-  // ---- rendering the simulated camera image (the camera shown)
+  // ---- rendering the simulated camera images (one renderer, copied into each camera's stage)
   let dirty = true;
   function render() {
     if (!visible() || !dirty) return;
     dirty = false;
-    applyPinhole(cam3, S.cal, 960, 540);
-    ctx.hideForCamera(() => renderer.render(ctx.scene, cam3));
+    for (const st of Object.values(states)) {
+      applyPinhole(cam3, st.cal, 960, 540);
+      ctx.hideForCamera(() => renderer.render(ctx.scene, cam3));
+      st.simG.drawImage(glCanvas, 0, 0, 960, 540);
+    }
   }
   function update() { dirty = true; draw(); render(); }
 
@@ -529,8 +602,20 @@ export function initCameraTab(ctx) {
     }
     select(S.cam.id);
   }
+  // "Cameras" in the main view: the stages move there (and back), with the frames and overlays they have
+  const home = $('cam-stages').parentElement, homeNext = $('cam-stages').nextSibling;
+  function showInMain(on) {
+    $('cam-main').hidden = !on;
+    if (on) $('cam-main').append($('cam-stages')); else home.insertBefore($('cam-stages'), homeNext);
+    $('view-cams').classList.toggle('on', on);
+    if (on) activate();
+    update();
+  }
+  $('view-cams').onclick = () => showInMain($('cam-main').hidden);
+  $('cams-full').onclick = () => fullscreen($('cam-stages'));
+  document.addEventListener('fullscreenchange', () => update());
   return {
-    update, render, markDirty: () => { dirty = true; }, get calibration() { return S.cal; }, get detections() { return S.detections; },
+    showInMain, update, render, markDirty: () => { dirty = true; }, get calibration() { return S.cal; }, get detections() { return S.detections; },
     calibrationOf: id => states[id].cal, addTracker, grabFrame, stopVideo, activate, trackArm, select,
     /** Show an image (URL) as a camera's frame, like "Image file…" (for tests and tools). */
     loadFrame: (id, url) => { const st = states[id]; st.source = 'file'; st.img.src = url; if (st === S) $('cam-source').value = 'file'; },

@@ -2,6 +2,21 @@
 
 Branch `feature/threejs-sim`. Newest first. Dates are when the change was committed.
 
+## 2026-10-13 (late afternoon): Rigid-part tracking with tags 106–109, both cameras side by side
+
+- **Tags on the arm:**
+  - Wrist: 109 (S5 servo face) and 108 (S5 bracket side plate).
+  - Gripper: 107 and 106 (two faces of the S6 servo).
+  - Their layout on each part is measured from close-up photos. All earlier tag photos were removed. Tags need a white margin.
+- **Rigid parts** (`js/rigidtrack.js`): each part's pose comes from all its tags in all cameras at once.
+  - Each camera is weighted by its calibration quality (the OAK counts more than the webcam).
+  - Single-tag poses are refined and the mirror ambiguity is resolved.
+  - Each tag's in-plane turn is found automatically, and "Learn tag layout" measures where a tag sits.
+- **Camera tab:** both cameras side by side, the estimated parts drawn as wireframes over the frames, small tags searched 2× enlarged.
+- **Main view:** "Cameras" shows both cameras instead of the 3D view; ⛶ for full screen, one or both.
+- **Model:** the S5 servo is back in its original orientation (the earlier 90° turn was wrong).
+- **On live snapshots:** wrist 2,5 px, gripper 1,5 px. See [`docs/two-camera-tracking.md`](docs/two-camera-tracking.md) for checks and the next step: anchor and HOME calibration from a few poses.
+
 ## 2026-10-13 (afternoon): Two cameras, arm tracking with AprilTags, cubes in 3D
 
 - **Second camera.** The webcam on the monitor is the controller's `/api/camera2/*` (status, snapshot.jpg, stream.mjpg, capture), next to the OAK's `/api/camera/*`. `server.mjs --camera <controller>` forwards both, GET only.

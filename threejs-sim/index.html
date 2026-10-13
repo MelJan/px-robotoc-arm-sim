@@ -42,7 +42,11 @@
 <main>
   <section id="view">
     <canvas id="canvas"></canvas>
+    <div id="cam-main" class="cam-main" hidden></div>
     <div class="view-tools">
+      <button id="view-cams" title="Show both cameras here instead of the 3D view">Cameras</button>
+      <button id="cams-full" title="Both cameras full screen (Esc to leave)">⛶ Both</button>
+      <span class="sep"></span>
       <button data-view="orbit" class="on">Perspective</button>
       <button data-view="top">Top</button>
       <button data-view="side">Side</button>
@@ -186,15 +190,18 @@
     <!-- ======================= Camera ======================= -->
     <div id="tab-camera" hidden>
       <section class="card hero">
-        <h2><span id="cam-title">OAK on the stand</span> <small>simulated view with the real frame on top</small></h2>
+        <h2>Cameras <small>simulated view with the real frame on top · selected: <span id="cam-title">OAK on the stand</span></small></h2>
         <div class="row wrap">
           <label class="inline">Camera <select id="cam-select"></select></label>
         </div>
-        <div class="cam-stage">
-          <canvas id="cam-sim" width="960" height="540"></canvas>
-          <img id="cam-photo" alt="" style="opacity:0.5">
-          <canvas id="cam-overlay"></canvas>
+        <div id="cam-stages" class="cam-stages">
+          <div id="cam-stage-0" class="cam-stage sel">
+            <canvas width="960" height="540"></canvas>
+            <img id="cam-photo" alt="" style="opacity:0.5">
+            <canvas id="cam-overlay"></canvas>
+          </div>
         </div>
+        <p class="note">Both cameras at once; click one to select it for the source and calibration controls.</p>
         <div class="row wrap">
           <select id="cam-source">
             <option value="saved">Saved frame, 2026-10-12</option>
@@ -249,13 +256,15 @@
       </details>
 
       <details open>
-        <summary>Arm tracking <small>AprilTags 71, 72 on the arm, seen by both cameras</small></summary>
+        <summary>Arm tracking <small>AprilTags 106–109 on the wrist and gripper, both cameras combined</small></summary>
         <div class="row wrap">
           <button id="cam-arm" class="primary big" title="Finds the tags in every camera's frame, triangulates them and fits the joint angles">Track the arm</button>
           <label class="inline"><input type="checkbox" id="cam-arm-ghost" checked> Show the tracked pose as a ghost</label>
-          <label class="inline" title="Also fit the tag corners (needs the tags' orientation on the arm to be right)"><input type="checkbox" id="cam-arm-corners"> Use corners</label>
+          <label class="inline" title="Also fit the tag corners, in the turn each tag is found to be stuck on with"><input type="checkbox" id="cam-arm-corners" checked> Use corners</label>
           <label class="inline"><input type="checkbox" id="cam-track-arm" checked> While tracking</label>
           <label class="inline" title="Colour the tags by the rigid part they sit on and join the tags of one part"><input type="checkbox" id="cam-show-parts" checked> Tags &amp; parts</label>
+          <label class="inline" title="Each part where its tags alone put it (rigid-body fit), drawn over the frame"><input type="checkbox" id="cam-show-bodies" checked> Estimated parts</label>
+          <button id="cam-arm-learn" title="Measure where each seen tag sits on its part (relative to the part's fit) and use that">Learn tag layout</button>
         </div>
         <div id="cam-arm-out" class="note"></div>
         <p class="note">Tags on one rigid part move together and count as one object: one camera may see one tag of a part and the other camera another, and both still meet in one pose. The wrist part turns only about S4 relative to the forearm, the gripper only about S5 relative to the wrist, so few views constrain the fit. Each tag seen by two cameras is also triangulated on its own. Tracked minus commanded angle is what the HOME calibration still gets wrong.</p>

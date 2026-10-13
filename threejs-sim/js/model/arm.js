@@ -163,11 +163,10 @@ export function buildArm(M) {
   for (const sx of [-1, 1]) wrist.add(sidePlate(M, sx * 2.75, -1.25, 2.8, 2.5, [...hornHoles(0, 1.25)]));
   const wp = plate(5.7, 2.5, 0.2, M.anodised, [[-1.6, 0, 0.18], [1.6, 0, 0.18], [0, 0, 0.5]], 0.2); at(wp, 0, 0, 2.9); wrist.add(wp);
   for (const sx of [-1, 1]) { const b = bend(M, 2.5, 'y'); at(b, sx * 2.65, 0, 2.8); wrist.add(b); }
-  // The S5 servo's wide faces point along the S4 axis (photos/arm-tags-wrist-front-along-s4.jpg: tag 103
-  // on its face, seen along the S4 horn): body along the wrist's Y, turned 90 degrees about the tool axis.
-  const s5mount = new THREE.Group(); s5mount.rotation.z = Math.PI / 2; wrist.add(s5mount);
-  const s5 = servo(M); at(s5, 0, 0, ARM.L4 - 0.48); s5mount.add(s5);
-  for (const sx of [-1, 1]) s5mount.add(sidePlate(M, 1.03 + sx * 2.95, 3.0, ARM.L4 - 1.0, 2.2, [[0, 1.5, 0.15]]));
+  // S5 servo between the bracket's side plates, body along X, its wide (label) faces toward +-Y
+  // (photos/arm-tags-108-109-wrist-front.jpg: tag 109 on that face, tag 108 on the side plate)
+  const s5 = servo(M); at(s5, 0, 0, ARM.L4 - 0.48); wrist.add(s5);
+  for (const sx of [-1, 1]) wrist.add(sidePlate(M, 1.03 + sx * 2.95, 3.0, ARM.L4 - 1.0, 2.2, [[0, 1.5, 0.15]]));
 
   // ---- hand (flange frame, Z = tool axis)
   const hand = joint(new THREE.Group()); hand.position.z = ARM.L4; wrist.add(hand);
