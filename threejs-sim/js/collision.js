@@ -159,7 +159,7 @@ export function armShapes(f, gap) {
   add('S4 bracket', LINK.fore, boxInFrame(f.elbow, [0, -1.0, ARM.L3 - 0.9], [2.6, 2.1, 1.6]));
   // Wrist: U bracket from the S4 horn and the S5 servo body.
   add('wrist bracket', LINK.wrist, boxInFrame(f.wrist, [0, 0, 1.4], [2.9, 1.3, 1.3]));
-  add('S5 servo', LINK.wrist, boxInFrame(f.wrist, [1.035, 0, ARM.L4 - 2.335], [2.04, 0.99, 1.84]));
+  add('S5 servo', LINK.wrist, boxInFrame(f.wrist, [0, 1.035, ARM.L4 - 2.335], [0.99, 2.04, 1.84]));   // body along the wrist's Y (model/arm.js)
   // Gripper base plate with the gears, and the S6 servo behind it.
   add('gripper plate', LINK.hand, boxInFrame(f.hand, [0, 0, 1.25], [GRIPPER.plate.w / 2, 0.65, 0.95]));
   add('S6 servo', LINK.hand, boxInFrame(f.hand, [GRIPPER.gear[0] + 1.035, -2.635, GRIPPER.gear[1]], [2.04, 1.84, 0.99]));

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CAMERAS, ARM_TAGS } from '../js/config.js';
+import { CAMERAS, ARM_TAGS as ALL_TAGS } from '../js/config.js';
+const ARM_TAGS = ALL_TAGS.filter(t => t.id != null);
 import { calFromLookAt, tagPoints, projectBoard, triangulate, fitArmPose, boardToTable } from '../js/armtrack.js';
 import { project } from '../js/calib.js';
 

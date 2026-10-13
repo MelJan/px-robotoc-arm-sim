@@ -6,7 +6,7 @@
 // camera API (/api/camera/* for the OAK, /api/camera2/* for the webcam). Nothing is ever sent.
 
 import * as THREE from 'three';
-import { CAMERA, CAMERAS, ARM_TAGS, MAT } from './config.js';
+import { CAMERA, CAMERAS, ARM_TAGS, ARM_PARTS, MAT } from './config.js';
 import { calibrate, project, MARKER_CORNERS, SAVED_FRAME_CORNERS, markerCentre } from './calib.js';
 import { detectCubes } from './detect.js';
 import { detectMarkers } from './aruco.js';
@@ -18,6 +18,8 @@ const W = CAMERA.w, H = CAMERA.h;
 const COLOR_CSS = { orange: '#e8792b', blue: '#2f6fd6', yellow: '#d9a800', green: '#2f9b47', red: '#d23b3b' };
 const $ = id => document.getElementById(id);
 const deg = r => r * 180 / Math.PI;
+const partCss = link => '#' + ARM_PARTS[link].colour.toString(16).padStart(6, '0');
+const tagById = id => ARM_TAGS.find(t => String(t.id) === String(id));
 
 /** Table frame (mm) -> board frame (cm). */
 export function tableToBoard([X, Y, Z], d = MAT.sToEdge) { return [-Y / 10, X / 10 + d, Z / 10]; }
@@ -364,7 +366,7 @@ export function initCameraTab(ctx) {
     let result = null;
     // a tag seen by two or more cameras: its 3D position, independent of the arm model
     const tri = {};
-    for (const t of ARM_TAGS) {
+    for (const t of ARM_TAGS.filter(x => x.id != null)) {
       const v = views.filter(x => x.tags[t.id]).map(x => ({ cal: x.cal, uv: x.tags[t.id].centre }));
       if (v.length >= 2) { const r = triangulate(v); tri[t.id] = { board: tableToBoard(r.X), rms: r.rms }; }
     }
@@ -377,7 +379,7 @@ export function initCameraTab(ctx) {
     lastArm = result;
     ctx.onArmTrack(result);
     const a0 = ctx.armAngles();
-    $('cam-arm-out').innerHTML = lines.map(l => `<div>${l}</div>`).join('') +
+    $('cam-arm-out').innerHTML = legend() + lines.map(l => `<div>${l}</div>`).join('') +
       Object.entries(tri).map(([id, t]) => `<div>tag ${id} from ${views.filter(x => x.tags[id]).length} cameras: x ${t.board[0].toFixed(1)} · y ${t.board[1].toFixed(1)} · z ${t.board[2].toFixed(1)} cm (${t.rms.toFixed(1)} px)</div>`).join('') +
       (result ? `<table class="params"><tr><th></th>${['S1', 'S2', 'S3', 'S4', 'S5'].map(s => `<th>${s}</th>`).join('')}</tr>
         <tr><th>tracked</th>${['s1', 's2', 's3', 's4', 's5'].map(j => `<td>${result.free.includes(j) ? `${result.angles[j].toFixed(1)}°` : '–'}</td>`).join('')}</tr>
@@ -389,6 +391,14 @@ export function initCameraTab(ctx) {
     return result;
   }
   $('cam-arm').onclick = () => trackArm();
+  /** Table: tag, where it is, the rigid part, what moves it, which cameras saw it in the last round. */
+  function legend() {
+    const seen = t => Object.values(states).filter(st => t.id != null && st.tags[t.id]).map(st => st.cam.name.split(' ')[0]).join(', ') || '–';
+    return `<table class="params legend"><tr><th>Tag</th><th>On</th><th>Part</th><th>Moved by</th><th>Seen by</th></tr>${ARM_TAGS.map(t =>
+      `<tr><td><b style="color:${partCss(t.link)}">${t.id ?? 'reprint'}</b></td><td>${t.on}</td><td style="color:${partCss(t.link)}">${ARM_PARTS[t.link].name}</td><td>${ARM_PARTS[t.link].joints} (last: ${ARM_PARTS[t.link].last})</td><td>${seen(t)}</td></tr>`).join('')}</table>`;
+  }
+  $('cam-arm-out').innerHTML = legend();
+  $('cam-show-parts').onchange = () => draw();
   $('cam-arm-ghost').onchange = () => ctx.onArmTrack($('cam-arm-ghost').checked ? lastArm : null);
 
   // ---- drawing (the camera shown)
@@ -423,12 +433,20 @@ export function initCameraTab(ctx) {
         g.strokeStyle = '#ffffff'; g.lineWidth = 2; g.beginPath(); g.arc(...p.uv, 6, 0, 2 * Math.PI); g.stroke();
         g.strokeStyle = '#2f6fd6'; g.beginPath(); g.moveTo(r[0] - 6, r[1]); g.lineTo(r[0] + 6, r[1]); g.moveTo(r[0], r[1] - 6); g.lineTo(r[0], r[1] + 6); g.stroke();
       }
-      // the arm tags where the model puts them (commanded pose): orange outlines
+      // the arm tags where the model puts them (commanded pose), in the colour of the rigid part they sit on;
+      // a dashed line joins the tags of one part (they move as one object)
       const a = ctx.armAngles();
+      const showParts = $('cam-show-parts').checked;
+      for (const link of Object.keys(ARM_PARTS)) {
+        const cs = ARM_TAGS.filter(t => t.link === link).map(t => projectBoard(cal, tagPoints(t, a).centre));
+        if (showParts && cs.length > 1) { g.strokeStyle = partCss(link); g.lineWidth = 1.5; g.setLineDash([5, 4]); g.beginPath(); cs.forEach((p, i) => (i ? g.lineTo(...p) : g.moveTo(...p))); g.stroke(); g.setLineDash([]); }
+      }
       for (const t of ARM_TAGS) {
         const tp = tagPoints(t, a), q = tp.corners.map(c => projectBoard(cal, c));
-        g.strokeStyle = 'rgba(255,170,0,0.95)'; g.lineWidth = 2; g.beginPath(); q.forEach((p, i) => (i ? g.lineTo(...p) : g.moveTo(...p))); g.closePath(); g.stroke();
-        const c = projectBoard(cal, tp.centre); g.fillStyle = '#ffb000'; g.font = 'bold 16px system-ui'; g.fillText(`tag ${t.id}`, c[0] + 14, c[1] - 10);
+        g.strokeStyle = partCss(t.link); g.lineWidth = 2; g.setLineDash(t.id == null ? [3, 3] : []);
+        g.beginPath(); q.forEach((p, i) => (i ? g.lineTo(...p) : g.moveTo(...p))); g.closePath(); g.stroke(); g.setLineDash([]);
+        const c = projectBoard(cal, tp.centre); g.fillStyle = partCss(t.link); g.font = 'bold 15px system-ui';
+        g.fillText(`${t.id ?? 'reprint'}${showParts ? ` → ${t.link === 'wrist' ? 'wrist (S1–S4)' : 'gripper (S1–S5)'}` : ''}`, c[0] + 14, c[1] - 10);
       }
     }
     // markers as detected in the frame (green), with their first corner marked
@@ -440,7 +458,8 @@ export function initCameraTab(ctx) {
     // arm tags as detected (cyan) and where the tracked pose puts them (white cross)
     for (const [id, t] of Object.entries(S.tags)) {
       g.strokeStyle = '#19c8e0'; g.lineWidth = 3; g.beginPath(); t.corners.forEach((p, i) => (i ? g.lineTo(...p) : g.moveTo(...p))); g.closePath(); g.stroke();
-      g.fillStyle = '#19c8e0'; g.font = 'bold 16px system-ui'; g.fillText(`tag ${id}`, t.corners[2][0] + 6, t.corners[2][1] + 16);
+      const tg = tagById(id);
+      g.fillStyle = '#19c8e0'; g.font = 'bold 16px system-ui'; g.fillText(`tag ${id}${tg ? ` · ${tg.on}` : ' (not on the arm)'}`, t.corners[2][0] + 6, t.corners[2][1] + 16);
       if (lastArm?.points[id]) {
         const c = projectBoard(cal, lastArm.points[id]);
         g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.moveTo(c[0] - 7, c[1]); g.lineTo(c[0] + 7, c[1]); g.moveTo(c[0], c[1] - 7); g.lineTo(c[0], c[1] + 7); g.stroke();

@@ -50,7 +50,7 @@ export const projectBoard = (cal, P, d = MAT.sToEdge) => project(cal, boardToTab
  * Tag corners in an image (ImageData), trying a few threshold settings like OpenCV does.
  * Returns { [id]: { corners: [[u,v] x 4], centre: [u,v] } } for the arm tags found.
  */
-export function detectArmTags(img, ids = ARM_TAGS.map(t => t.id)) {
+export function detectArmTags(img, ids = ARM_TAGS.filter(t => t.id != null).map(t => t.id)) {
   const out = {};
   for (const [window, offset] of [[15, 3], [31, 7], [31, 3], [61, 7]]) {
     const { markers } = detectMarkers(img, { family: '36h11', ids, window, offset, maxArea: img.width * img.height / 4 });
@@ -101,7 +101,7 @@ export function triangulate(views) {
  */
 export function fitArmPose(observations, { init, free = null, useCorners = false, prior = 90, d = MAT.sToEdge, iterations = 100 } = {}) {
   const a0 = { s1: 0, s2: 0, s3: 0, s4: 0, s5: 0, ...init };
-  const tags = Object.fromEntries(ARM_TAGS.map(t => [t.id, t]));
+  const tags = Object.fromEntries(ARM_TAGS.filter(t => t.id != null).map(t => [t.id, t]));
   const obs = [];
   observations.forEach((o, ci) => {
     for (const [id, t] of Object.entries(o.tags || {})) {
@@ -148,7 +148,7 @@ export function fitArmPose(observations, { init, free = null, useCorners = false
     const q = projectBoard(o.cal, tagPoints(o.tag, angles, frames).centre, d);
     return { cam: o.ci, id: o.tag.id, err: Math.hypot(q[0] - o.uv[0], q[1] - o.uv[1]) };
   });
-  const pts = Object.fromEntries(ARM_TAGS.map(t => [t.id, tagPoints(t, angles, frames).centre]));
+  const pts = Object.fromEntries(ARM_TAGS.filter(t => t.id != null).map(t => [t.id, tagPoints(t, angles, frames).centre]));
   const e2 = residuals.reduce((s, x) => s + x.err * x.err, 0);
   return { angles, free, rms: Math.sqrt(e2 / Math.max(1, residuals.length)), residuals, points: pts };
 }

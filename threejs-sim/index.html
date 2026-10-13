@@ -51,6 +51,7 @@
       <span class="sep"></span>
       <label><input type="checkbox" id="show-path" checked> Path</label>
       <label><input type="checkbox" id="show-shapes"> Collision shapes</label>
+      <label title="Which tag sits on which rigid part of the arm, and which joints move that part"><input type="checkbox" id="show-tags"> Tags &amp; parts</label>
       <input type="checkbox" id="show-ghost" hidden>
     </div>
     <div id="contacts" class="contacts" hidden></div>
@@ -254,9 +255,10 @@
           <label class="inline"><input type="checkbox" id="cam-arm-ghost" checked> Show the tracked pose as a ghost</label>
           <label class="inline" title="Also fit the tag corners (needs the tags' orientation on the arm to be right)"><input type="checkbox" id="cam-arm-corners"> Use corners</label>
           <label class="inline"><input type="checkbox" id="cam-track-arm" checked> While tracking</label>
+          <label class="inline" title="Colour the tags by the rigid part they sit on and join the tags of one part"><input type="checkbox" id="cam-show-parts" checked> Tags &amp; parts</label>
         </div>
         <div id="cam-arm-out" class="note"></div>
-        <p class="note">Both cameras need a frame (live video is best) and a calibration from the mat markers. Each tag seen by two cameras is triangulated; the joint angles are fitted to all tag views. Tracked minus commanded angle is what the HOME calibration still gets wrong.</p>
+        <p class="note">Tags on one rigid part move together and count as one object: one camera may see one tag of a part and the other camera another, and both still meet in one pose. The wrist part turns only about S4 relative to the forearm, the gripper only about S5 relative to the wrist, so few views constrain the fit. Each tag seen by two cameras is also triangulated on its own. Tracked minus commanded angle is what the HOME calibration still gets wrong.</p>
       </details>
 
       <details open>

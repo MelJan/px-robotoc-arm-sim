@@ -92,16 +92,26 @@ export const CAMERAS = [
   { id: 'webcam', name: 'Webcam on the monitor', api: '/api/camera2', w: 1280, h: 720, fPx: 900, posMm: [600, -320, 420], lookAtMm: [170, 0, 0] },
 ];
 
-// AprilTags (36h11) stuck to the arm (photos/arm-tags-71-72-*.jpg), for tracking the real arm with the
-// cameras. Placed in a link frame of kinematics.js fk(): centre and the tag's outward normal and "up"
-// (the direction of its top edge as printed), cm. size = side of the black square. Measured from the
-// photos only (about 2 to 3 mm); the tracker reports how well they fit.
+// AprilTags (36h11) stuck to the arm (photos/arm-tags-*.jpg), for tracking the real arm with the cameras.
+// Tags on one rigid part move together, so they act as one object: a camera that sees only one of them
+// still adds to the same part, and two cameras seeing different tags of a part still meet in one pose.
+// Each tag: link = fk() frame it is fixed to; centre, outward normal and "up" (direction of the tag's top
+// edge as printed) in that frame, cm; size = side of the black square. id null = a tag being reprinted
+// (no white margin on the first print, so it cannot be detected): drawn, not tracked.
+// Positions and sizes come from the photos only (2 to 3 mm); measure and correct them here.
 export const ARM_TAGS = [
-  // on the S5 (wrist rotation) servo's label face, the face toward -Y of the wrist frame
-  { id: 72, link: 'wrist', centre: [0.7, -1.0, ARM.L4 - 2.2], normal: [0, -1, 0], up: [0, 0, -1], size: 2.2 },
-  // on the S6 (gripper) servo's face toward the wrist, beside the gripper plate
-  { id: 71, link: 'hand', centre: [1.9, -2.5, 0.38], normal: [0, 0, -1], up: [0, -1, 0], size: 2.2 },
+  // wrist part (moves with S1..S4; the S4 bracket and the S5 servo): both tags face along the S4 axis
+  { key: 'wrist-s5', id: 103, link: 'wrist', centre: [1.0, 1.0, ARM.L4 - 2.3], normal: [1, 0, 0], up: [0, 0, -1], size: 2.2, on: 'S5 servo face' },
+  { key: 'wrist-bar', id: null, link: 'wrist', centre: [1.2, -2.6, ARM.L4 - 2.3], normal: [1, 0, 0], up: [0, 0, -1], size: 2.2, on: 'S4 bracket side bar' },
+  // gripper part (moves with S1..S5; the S6 servo and the jaws)
+  { key: 'hand-top', id: 100, link: 'hand', centre: [1.9, -2.5, 0.38], normal: [0, 0, -1], up: [0, -1, 0], size: 2.2, on: 'S6 servo, face toward the wrist' },
+  { key: 'hand-end', id: null, link: 'hand', centre: [3.94, -2.5, 1.4], normal: [1, 0, 0], up: [0, 0, -1], size: 2.2, on: 'S6 servo, cable end' },
 ];
+/** The rigid parts that carry tags: what moves them and where their joint axis is (for the overlay). */
+export const ARM_PARTS = {
+  wrist: { name: 'wrist (S4 bracket + S5 servo)', joints: 'S1–S4', last: 'S4', colour: 0x8e5cf7, axis: ['elbow', [0, 0, ARM.L3]] },
+  hand: { name: 'gripper (S6 servo + jaws)', joints: 'S1–S5', last: 'S5', colour: 0x19b8d0, axis: ['wrist', [0, 0, ARM.L4]] },
+};
 
 // Motion planning defaults (docs/pick-and-place-plan.md, docs/tracking-plan.md).
 export const PLAN = {

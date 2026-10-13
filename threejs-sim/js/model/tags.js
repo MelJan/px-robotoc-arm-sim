@@ -10,7 +10,7 @@ const materials = new Map();
 /** The printed tag: white margin, black border, 6 x 6 data cells (10 x 10 cells in all). */
 function tagMaterial(id) {
   if (!materials.has(id)) {
-    const bits = tagBits(id);
+    const bits = id == null ? new Array(36).fill(0) : tagBits(id);   // a tag being reprinted: black square only
     const map = canvasTexture(200, 200, (g, w) => {
       const c = w / 10;
       g.fillStyle = '#f4f4f0'; g.fillRect(0, 0, w, w);

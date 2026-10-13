@@ -9,14 +9,26 @@ Since 2026-10-13 two cameras watch the mat (`images/photos/setup-two-cameras-*.j
 
 The second camera's routes were read from the controller's `/openapi.json` on 2026-10-13. They are not yet in `lutich/robot-arm` on GitHub. `server.mjs --camera http://10.102.4.103:8765` forwards both, read only. Without it, the OAK falls back to the saved frame; for the webcam, load an image file.
 
-Two AprilTags (family 36h11) are stuck to the arm (`images/photos/arm-tags-71-72-*.jpg`, found with OpenCV):
+AprilTags (family 36h11) on the arm, in two rigid parts (`images/photos/arm-tags-*.jpg`, IDs read with OpenCV). Tags on one part move together and act as one object. One camera may see one tag of a part and the other camera another, and the views still meet in one pose. Each part has one degree of freedom relative to the part before it, so few views constrain it.
 
-| Tag | Where | Model (`js/config.js` `ARM_TAGS`) |
-|-----|-------|-----------------------------------|
-| 72 | label face of the S5 (wrist rotation) servo | wrist frame, centre (0,7, −1,0, 4,5) cm, facing −Y |
-| 71 | face of the S6 (gripper) servo toward the wrist | hand frame, centre (1,9, −2,5, 0,38) cm, facing −Z |
+| Part | Moved by | Tag | Where |
+|------|----------|-----|-------|
+| Wrist (S4 bracket + S5 servo) | S1–S4, turns about S4 | 103 | S5 servo face, facing along the S4 axis |
+| | | (reprint) | S4 bracket side bar, same direction |
+| Gripper (S6 servo + jaws) | S1–S5, turns about S5 | 100 | S6 servo, face toward the wrist |
+| | | (reprint) | S6 servo, cable end |
 
-The sizes (2,2 cm black square) and positions come from the photos only, so they are good to about 2 to 3 mm. **Measure them on the arm** and correct `ARM_TAGS`.
+The first prints of the two "reprint" tags have no white margin on the black servo, and one is bent over an edge, so they cannot be detected. Tags need a white margin of at least 1/8 of the black square's side and must sit flat on one face. Tags 72 and 71 from the first photos were replaced by 103 and 100.
+
+The photos also show that the S5 servo's wide face (with tag 103) faces along the S4 axis, so the model now has the S5 servo turned 90° about the tool axis.
+
+**Overlay.** "Tags & parts" in the 3D view, and the same checkbox in the Camera tab, colours each tag by its part, joins the tags of one part and links them to the joint axis that moves the part. The Arm tracking box lists every tag with its part, the joints that move it and the cameras that saw it.
+
+**How big must the tags be** (live test, 2026-10-13: a strip of five tags 105–109, 18,9 mm black square with a white margin, held about 18 cm above the mat):
+- Both cameras found all five, OpenCV and the browser detector alike. They appeared 23 to 39 px wide in the 1280 × 720 frames.
+- Triangulated from both cameras, the spacing came out as 35,4 / 35,0 / 35,0 / 34,6 mm and the side as 18,9 ± 0,3 mm.
+- The same frames found tag 103 on the arm only in the webcam, and tag 100 in neither (smaller in the image, at a steep angle).
+- So: about 20 px across in the image is the lower limit. 19 mm works for tags facing the cameras; 25 to 30 mm (with a 4 mm margin) is safer on the servo faces, which leave room for that.
 
 ## How it works
 

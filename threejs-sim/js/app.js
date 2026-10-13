@@ -5,6 +5,7 @@ import { createView } from './render.js';
 import { SERVOS, MAT, CAMERA, CAMERAS, CUBE, COLOURS, PLAN, CONTROLLER } from './config.js';
 import { calFromLookAt } from './armtrack.js';
 import { buildWebcam } from './model/tags.js';
+import { buildTagOverlay } from './tagoverlay.js';
 import { fk, anglesFromCounts, countsFromAngles, ikTopDown, guardViolations, camToBoard, toolYawAndTilt, Unreachable } from './kinematics.js';
 import { armShapes } from './collision.js';
 import { SimController, ControllerError } from './controller.js';
@@ -113,6 +114,10 @@ function placeMatAndCamera() {
   for (const c of CAMERAS) placeCamera(c);
 }
 placeMatAndCamera();
+
+// which tag sits on which rigid part, and what moves it (toggle "Tags & parts")
+const tagOverlay = buildTagOverlay();
+tagOverlay.group.visible = false; scene.add(tagOverlay.group);
 
 // cubes
 const cubeMeshes = new Map();
@@ -762,6 +767,7 @@ let trackedPose = null;
 let needsRender = true, last = performance.now(), lastContacts = new Set(), eventIdx = 0, lastCubeKey = '';
 controls.addEventListener('change', () => { needsRender = true; });
 $('show-shapes').onchange = () => { needsRender = true; };
+$('show-tags').onchange = () => { tagOverlay.group.visible = $('show-tags').checked; needsRender = true; };
 $('show-path').onchange = () => { pathLine.visible = pathDots.visible = $('show-path').checked; needsRender = true; };
 
 world.step(0, ctl.position);
@@ -801,6 +807,7 @@ function frame(now) {
   if (needsRender) {
     const a = anglesFromCounts(ctl.position);
     arm.setPose(a, world.gap);
+    if (tagOverlay.group.visible) tagOverlay.update(a);
     // The ghost shows the real arm only where it differs from the simulated one.
     // the ghost shows the arm as the cameras see it (Camera tab → Arm tracking)
     ghost.root.visible = !!trackedPose;

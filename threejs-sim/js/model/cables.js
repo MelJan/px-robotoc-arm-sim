@@ -22,7 +22,7 @@ export function buildCables(M, G, zS1, pca) {
     { mats: servoWires, pts: [['turret', [-1.05, -3.77, ARM.H_S2]], ['turret', [-1.6, -4.4, ARM.H_S2 + 0.9]], ['shoulder', [-1.4, -3.0, 1.2]], ...ch(1)], sag: 0.5 },
     { mats: servoWires, pts: [['elbow', [-1.05, 0, -3.77]], ['elbow', [-1.6, -1.6, -3.6]], ['shoulder', [-1.3, -2.9, ARM.L2 - 2.0]], ...ch(2)], sag: 0.7 },
     { mats: servoWires, pts: [['elbow', [-1.05, -3.77, L3]], ['elbow', [-0.9, -1.4, L3 - 3.2]], ['elbow', [-0.7, -0.85, L3 * 0.45]], ['elbow', [-1.2, -1.6, 0.4]], ['shoulder', [-1.1, -3.0, ARM.L2 - 1.6]], ...ch(3)], sag: 0.5 },
-    { mats: servoWires, pts: [['wrist', [3.77, 0, L4 - 3.4]], ['wrist', [3.3, -1.7, 0.6]], ['elbow', [0.4, -0.85, L3 * 0.45]], ['elbow', [-0.9, -1.7, 0.6]], ['shoulder', [-0.9, -3.1, ARM.L2 - 1.2]], ...ch(4)], sag: 0.5 },
+    { mats: servoWires, pts: [['wrist', [0, 3.77, L4 - 3.4]], ['wrist', [1.7, 3.3, 0.6]], ['elbow', [0.4, -0.85, L3 * 0.45]], ['elbow', [-0.9, -1.7, 0.6]], ['shoulder', [-0.9, -3.1, ARM.L2 - 1.2]], ...ch(4)], sag: 0.5 },
     { mats: servoWires, pts: [['hand', [4.62, -3.52, gz]], ['hand', [3.6, -3.8, -1.0]], ['wrist', [2.2, -2.1, 1.2]], ['elbow', [0.65, -0.75, L3 * 0.45 + 0.3]], ['elbow', [-0.7, -1.8, 0.8]], ['shoulder', [-0.7, -3.2, ARM.L2 - 0.8]], ...ch(5)], sag: 0.6 },
     // rainbow ribbon from the board's I2C pins to the Raspberry Pi GPIO header on the desk
     { mats: [M.wireYellow, M.wireGreen, M.wireBlue, M.wirePurple], pts: [['shoulder', [px - 0.3, pca.y + 0.1, pz - 3.9]], ['shoulder', [px - 0.6, -1.6, pz - 5.0]], ['root', [-1.5, -7.5, 4.5]], ['root', [-6.4, -9.2, 1.9]]], sag: 1.6, r: 0.045 },
