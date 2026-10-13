@@ -662,20 +662,33 @@ export function initCameraTab(ctx) {
    */
   async function syncCubes() {
     await activate();
-    const live = Object.values(states).filter(st => st.source === 'live');
-    await Promise.all(live.map(st => new Promise(res => {
-      const done = () => { st.img.removeEventListener('load', done); st.img.removeEventListener('error', done); res(); };
-      st.img.addEventListener('load', done); st.img.addEventListener('error', done);
-      refreshLive(st); setTimeout(done, 5000);
-    })));
+    // always an up-to-date frame: a fresh snapshot of every camera (one GET each), or its running video
+    const stale = [];
+    await Promise.all(Object.values(states).map(st => {
+      if (st.source === 'video' && st.img.getAttribute('src')) return null;
+      st.source = 'live'; if (st === S) $('cam-source').value = 'live';
+      return new Promise(res => {
+        let finished = false;
+        const done = ok => {
+          if (finished) return; finished = true;
+          st.img.removeEventListener('load', onLoad); st.img.removeEventListener('error', onErr);
+          if (!ok) stale.push(st.cam.name);
+          res();
+        };
+        const onLoad = () => done(true), onErr = () => done(false);
+        st.img.addEventListener('load', onLoad); st.img.addEventListener('error', onErr);
+        refreshLive(st); setTimeout(() => done(false), 6000);
+      });
+    }));
     await new Promise(r => setTimeout(r, 300));
     findCubes();
     showDetections(0);
+    const note = stale.length ? ` (no fresh frame from ${stale.join(', ')}: its last frame was used)` : ' (fresh frames)';
     const resting3d = cubes3d.filter(resting);
-    if (resting3d.length) { ctx.useCubes3d(resting3d); return `${resting3d.length} cubes from ${Math.max(...cubes3d.map(c => c.cameras))} cameras`; }
+    if (resting3d.length) { ctx.useCubes3d(resting3d); return `${resting3d.length} cubes from ${Math.max(...cubes3d.map(c => c.cameras))} cameras${note}`; }
     const flat = S.detections.filter(d => d.ok);
-    if (flat.length) { ctx.useDetections(flat); return `${flat.length} cubes from ${S.cam.name} (assumed on the mat)`; }
-    throw new Error(live.length ? 'No cubes found in the camera frames' : 'No live camera: start the server with --camera http://10.102.4.103:8765 (or load frames in the Camera tab)');
+    if (flat.length) { ctx.useDetections(flat); return `${flat.length} cubes from ${S.cam.name}, assumed on the mat${note}`; }
+    throw new Error(stale.length === Object.keys(states).length ? 'No camera could be read: start the server with --camera http://10.102.4.103:8765' : `No cubes found in the camera frames${note}`);
   }
   return {
     syncCubes, showInMain, update, render, markDirty: () => { dirty = true; }, get calibration() { return S.cal; }, get detections() { return S.detections; },
