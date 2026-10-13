@@ -11,8 +11,47 @@ import { buildCables } from './cables.js';
 
 const RAD = Math.PI / 180;
 
+/**
+ * PCA9685 on the upper arm, shoulder frame (cm): board centre at (face, y, z), `face` = the board's
+ * component side, foam pad between it and the side plate's outer face at x = -2,7.
+ */
+export const PCA = { foam: 1.1, y: -0.1, z: 4.3, face: -2.7 - 1.1 - 0.16 };
+/** Height of servo header channel k on the board (groups of four with a gap), relative to its centre. */
+export const pcaHeaderZ = k => -2.5 + k * 0.254 + Math.floor(k / 4) * 0.33;
+
 /** Centre of the 9 x 8,4 base plate relative to the S1 axis (cm, +Y forward). */
 export const BASE_OFFSET_Y = 2.2;
+
+function buildPca(M) {
+  const g = new THREE.Group(); at(g, 0, PCA.y, PCA.z);
+  const xs = PCA.face, top = 3.125;
+  g.add(at(box(PCA.foam, 3.1, 7.2, M.pinkFoam, 0.3), -2.7 - PCA.foam / 2, 0.3, 0.35));          // foam pad, overhangs top and front
+  g.add(at(box(0.16, 2.54, 6.25, M.pcbBlue, 0.03), xs + 0.08, 0, 0));
+  g.add(at(box(0.12, 0.95, 0.45, M.chip), xs - 0.06, 0.15, -0.05));                                  // PCA9685 chip
+  for (let i = 0; i < 4; i++) for (const y of [-0.25, -0.55]) g.add(at(box(0.08, 0.2, 0.32, M.chip), xs - 0.04, y, 0.75 + i * 0.5));   // 220 R arrays
+  for (let i = 0; i < 6; i++) g.add(at(box(0.03, 0.2, 0.16, M.gold), xs - 0.015, 0.85, 1.0 + i * 0.27)); // address pads
+  g.add(at(box(0.85, 0.7, 0.8, M.terminal, 0.05), xs - 0.425, 0.8, -0.55));                          // power terminal, front edge
+  for (const z of [-0.75, -0.35]) screwAt(g, M, V(xs - 0.86, 0.8, z), V(-1, 0, 0), 0.12);
+  g.add(at(box(0.1, 0.15, 0.1, M.led), xs - 0.05, 0.75, -1.15));
+  const cap = cyl(0.32, 0.75, M.chip, 'x', 20); at(cap, xs - 0.38, 0.35, -2.1); g.add(cap);         // electrolytic capacitor
+  const capTop = cyl(0.3, 0.02, M.screw, 'x', 20); at(capTop, xs - 0.76, 0.35, -2.1); g.add(capTop);
+  for (let k = 0; k < 16; k++) {                                                                     // 16 x 3 servo headers, back edge
+    const z = pcaHeaderZ(k);
+    g.add(at(box(0.25, 0.78, 0.24, M.chip), xs - 0.125, -0.85, z));
+    if (k < 6) g.add(at(box(1.45, 0.78, 0.26, M.chip, 0.03), xs - 0.97, -0.85, z));                  // plugged servo connectors S1..S6
+    else for (const y of [-0.6, -0.85, -1.1]) g.add(at(box(0.6, 0.064, 0.064, M.gold), xs - 0.55, y, z));
+  }
+  g.add(at(box(0.3, 1.6, 0.25, M.chip), xs - 0.15, 0.1, -top + 0.2));                               // I2C header and its connector
+  g.add(at(box(0.5, 1.6, 0.8, M.chip, 0.04), xs - 0.3, 0.1, -top - 0.35));
+  for (const z of [2.75, -2.85]) {                                                                   // zip ties around plate, foam and board
+    const xb = -2.4, w = xs - 0.03 - xb;
+    g.add(at(box(0.05, 3.1, 0.25, M.zip), xs - 0.03, 0.15, z));
+    g.add(at(box(0.05, 3.1, 0.25, M.zip), xb, 0.15, z));
+    for (const y of [-1.4, 1.7]) g.add(at(box(Math.abs(w), 0.05, 0.25, M.zip), (xs - 0.03 + xb) / 2, y, z));
+    const tail = box(2.4, 0.05, 0.22, M.zip); tail.rotation.z = Math.PI / 2 - 0.25; at(tail, xs - 0.35, -2.6, z); g.add(tail);
+  }
+  return g;
+}
 
 /**
  * Builds the arm. Returns { root, setPose(angles, gap), groups }.
@@ -85,22 +124,11 @@ export function buildArm(M) {
   for (const z of [zMid - 0.1, zMid + 0.1]) { const p = plate(5.0, 2.5, 0.2, M.anodised, [...hornHoles(0, 0), [-1.86, 0, 0.15], [1.86, 0, 0.15]], 0.05); at(p, 0, 0, z); shoulder.add(p); }
   for (const x of [-1.86, 1.86]) { screwAt(shoulder, M, V(x, 0, zMid + 0.2), V(0, 0, 1), 0.16); const n = nut(M, 0.2); n.rotation.set(0, 0, 0); at(n, x, 0, zMid - 0.3); shoulder.add(n); }
   const pin3 = cyl(0.42, 0.45, M.bearing, 'x', 24); at(pin3, -2.4, 0, ARM.L2); shoulder.add(pin3);
-  // PCA9685 servo driver on pink foam on the back of the upper arm (photos/base-s2-shoulder-side.jpg)
-  const pca = new THREE.Group();
-  pca.add(at(box(2.7, 0.6, 6.2, M.pinkFoam, 0.18), 0, 0, 0));
-  pca.add(at(box(2.5, 0.16, 6.2, M.pcbBlue, 0.03), 0, -0.38, 0));
-  for (let i = 0; i < 4; i++) pca.add(at(box(0.85, 0.12, 0.25, M.chip), 0.55, -0.5, -1.0 + i * 0.5));          // resistor arrays
-  pca.add(at(box(0.9, 0.18, 0.9, M.chip), -0.35, -0.52, 1.3));                                               // PCA9685 chip
-  pca.add(at(box(0.9, 0.7, 0.8, M.terminal, 0.05), 0.5, -0.75, 2.65));                                        // power terminal
-  for (const x of [0.25, 0.75]) screwAt(pca, M, V(x, -1.1, 2.65), V(0, -1, 0), 0.12);
-  pca.add(at(box(0.15, 0.1, 0.1, M.led), 0.95, -0.5, 1.9));
-  for (let k = 0; k < 16; k++) {                                                                              // 16 x 3 servo header
-    const z = -2.75 + k * 0.254;
-    pca.add(at(box(0.75, 0.25, 0.22, M.chip), -0.75, -0.6, z));
-    if (k < 6) pca.add(at(box(0.78, 1.45, 0.26, M.chip, 0.03), -0.75, -1.3, z));                              // plugged servo connectors S1..S6
-    else for (let r = 0; r < 3; r++) pca.add(at(box(0.064, 0.6, 0.064, M.gold), -1.0 + r * 0.254, -0.95, z));
-  }
-  at(pca, 0.2, -1.65, zMid - 0.4); shoulder.add(pca);
+  // PCA9685 servo driver on a pink foam pad on the -X side plate, board facing out (-X), long side
+  // along the link (photos/pca9685-closeup.jpg, photos/pca9685-on-upper-arm.jpg, photos/park-front.jpg):
+  // the 16 servo headers on the back (-Y) edge with channel 0 at the bottom, the power terminal on the
+  // front edge, the I2C header on the bottom edge, two zip ties around plate, foam and board.
+  shoulder.add(buildPca(M));
 
   // ---- forearm (elbow frame). The S3 servo rides on the forearm: its body sits in a bracket
   // behind the elbow, the upper arm's U bracket is screwed to its horn (photos/elbow-s3-forearm-closeup.jpg).
@@ -152,7 +180,7 @@ export function buildArm(M) {
     gripper.setGap(gap);
   };
   const groups = { root, base, turret, shoulder, elbow, wrist, hand };
-  const cables = buildCables(M, groups, zS1);
+  const cables = buildCables(M, groups, zS1, { ...PCA, headerZ: pcaHeaderZ });
   root.add(cables.group);
   const setPoseAndCables = (a, gap) => { setPose(a, gap); cables.update(); };
   return { root, setPose: setPoseAndCables, groups };

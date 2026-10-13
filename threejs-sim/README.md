@@ -16,7 +16,9 @@ node server.mjs --mock --camera http://10.102.4.103:8765               # mock ar
 node server.mjs                        # simulator only
 node server.mjs --controller http://10.102.4.103:8765                  # + the real controller, READ ONLY
 node server.mjs --controller http://10.102.4.103:8765 --allow-motion   # only when the team agrees, someone at the stop button
-node --test test/*.test.mjs            # 18 tests: kinematics, controller, collision, physics, planning, calibration
+node --test test/*.test.mjs            # 23 tests: kinematics, controller, collision, physics, planning, calibration, photo fit
+node tools/fit-views.mjs --joint       # fit camera and arm pose of the reference photos (docs/model-photo-comparison.md)
+node tools/compare.mjs                 # render model | photo | overlay for each reference photo into docs/images/compare/
 ```
 
 `--port` and `--host` change the address.
@@ -66,6 +68,8 @@ Opening `index.html` straight from disk does not work, because browsers block ES
 | `js/live.js` | HTTP client for the controller |
 | `js/app.js` | Page logic |
 | `server.mjs` | Static server, read-only proxy, mock controller |
+| `js/viewfit.js` | Model keypoints and the camera + joint-angle fit to points marked in a photo |
+| `tools/` | `fit-views.mjs` and `compare.mjs` with `photo-views.json`: the model-vs-photo check, `docs/model-photo-comparison.md` |
 
 ## Calibration still needed on the real arm
 

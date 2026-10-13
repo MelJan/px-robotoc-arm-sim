@@ -151,6 +151,8 @@ export function armShapes(f, gap) {
   add('turret', LINK.turret, boxInFrame(f.base, [0, -0.8, 8.95], [2.7, 2.6, 1.95]));
   // Upper arm: side plates at x = +-2,75 around the S3 servo, shortened at the joints.
   add('upper arm', LINK.upper, boxInFrame(f.shoulder, [0, 0, ARM.L2 / 2], [2.9, 1.3, ARM.L2 / 2 - 1.3]));
+  // PCA9685 on its foam pad on the -X side plate, plugged connectors included (model/arm.js PCA)
+  add('PCA9685', LINK.upper, boxInFrame(f.shoulder, [-4.35, -0.2, 4.5], [1.65, 1.7, 3.6]));
   // Forearm: aluminium tube, the elbow bracket, and the S4 servo in its bracket at the far end.
   add('S3 servo', LINK.fore, boxInFrame(f.elbow, [0, 0, -0.95], [2.1, 1.25, 2.55]));   // rides on the forearm, behind the elbow
   add('forearm', LINK.fore, capsuleInFrame(f.elbow, [0, 0, 1.9], [0, 0, ARM.L3 - 2.8], 0.95));

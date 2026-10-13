@@ -5,6 +5,8 @@
 //   node tools/compare.mjs --only gripper      views whose photo name contains "gripper"
 //   node tools/compare.mjs --out <dir>         default: ../docs/images/compare
 //   node tools/compare.mjs --look studio       lighting; default "office" (closer to the photos)
+//   node tools/compare.mjs --keypoints         also draw the model's named points (green) and the points
+//                                              marked in the photo (red, yellow line to the model point)
 //
 // Starts its own simulator server (no controller, nothing is sent anywhere) and a headless Chrome
 // (set CHROME to its path if it is not in the default place). How to match a view: docs/model-photo-comparison.md.
@@ -21,6 +23,8 @@ const opt = (name, dflt) => { const i = args.indexOf(name); return i >= 0 ? args
 const only = opt('--only', '');
 const outDir = path.resolve(opt('--out', path.join(ROOT, '..', 'docs', 'images', 'compare')));
 const look = opt('--look', 'office');
+const keypoints = args.includes('--keypoints');
+const height = Number(opt('--height', 900));   // panel height in px
 const viewsFile = path.resolve(opt('--views', path.join(ROOT, 'tools', 'photo-views.json')));
 const PORT = Number(opt('--port', 8779)), CDP = PORT + 1;
 const CHROME = process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
@@ -65,7 +69,7 @@ if (!ready) { console.error('the simulator page did not load'); quit(1); }
 
 // Runs in the page: pose the arm, render at the photo's aspect ratio from the view's camera,
 // compose the three panels and return them as a JPEG data URL.
-async function shoot(v, look) {
+async function shoot(v, look, keypoints, height) {
   const s = window.sim, $ = id => document.getElementById(id);
   for (const id of ['show-path', 'show-ghost', 'show-shapes']) { $(id).checked = false; $(id).dispatchEvent(new Event('change')); }
   s.ctl.rearm(); s.ctl.setCommands(v.counts || s.ctl.poses[v.pose || 'HOME'].slice());
@@ -74,7 +78,7 @@ async function shoot(v, look) {
   s.world.dirty = true;
   await new Promise(r => setTimeout(r, 700));            // the page's loop applies the pose and the cubes
   const img = new Image(); img.src = `/photos/${v.photo}`; await img.decode();
-  const H = 900, W = Math.round(H * img.naturalWidth / img.naturalHeight);
+  const H = height, W = Math.round(H * img.naturalWidth / img.naturalHeight);
   const cam = s.camera, r = s.renderer;
   const saved = { pos: cam.position.clone(), q: cam.quaternion.clone(), fov: cam.fov, aspect: cam.aspect, size: r.getSize(new s.THREE.Vector2()), ratio: r.getPixelRatio() };
   s.view.setLook(look);
@@ -102,12 +106,38 @@ async function shoot(v, look) {
     cam.aspect = W / H; cam.fov = v.camera.fov; cam.position.set(...v.camera.pos); cam.up.set(0, 0, 1);
     cam.lookAt(...v.camera.target); cam.rotateZ((v.camera.roll || 0) * Math.PI / 180); cam.updateProjectionMatrix();
   }
+  // a fitted pose (tools/fit-views.mjs) is set as exact model angles; the page's loop would round it to counts
+  if (v.angles) s.arm.setPose({ s1: 0, s2: 0, s3: 0, s4: 0, s5: 0, ...v.angles }, s.world.gap);
   s.view.render();
+  const shot = { q: cam.quaternion.clone(), p: cam.position.clone(), fov: cam.fov };   // the page's loop may move the camera during an await
+  if (v.angles) info = { ...info, angles: v.angles };
   const out = document.createElement('canvas'); out.width = 3 * W; out.height = H;
   const g = out.getContext('2d');
   g.drawImage(r.domElement, 0, 0, W, H);
   g.drawImage(img, W, 0, W, H);
   g.drawImage(img, 2 * W, 0, W, H); g.globalAlpha = 0.5; g.drawImage(r.domElement, 2 * W, 0, W, H); g.globalAlpha = 1;
+  if (keypoints) {
+    // keypoints of tools/fit-views.mjs, projected with the same camera as the render
+    const { projectKeypoints, KEYPOINTS } = await import('/js/viewfit.js');
+    const { anglesFromCounts } = await import('/js/kinematics.js');
+    const axis = (x, y, z) => new s.THREE.Vector3(x, y, z).applyQuaternion(shot.q).toArray();
+    const pinhole = { R: [axis(1, 0, 0), axis(0, -1, 0), axis(0, 0, -1)], C: shot.p.toArray(),
+      f: img.naturalHeight / 2 / Math.tan(shot.fov * Math.PI / 360), cx: img.naturalWidth / 2, cy: img.naturalHeight / 2 };
+    const angles = v.angles || anglesFromCounts(v.counts || s.ctl.poses[v.pose || 'HOME']);
+    const k = H / img.naturalHeight, marked = v.points || {};
+    const model = projectKeypoints(pinhole, angles, s.world.gap, undefined, n => !/^m\d/.test(n) || n in marked);
+    g.font = '13px sans-serif'; g.lineWidth = 3;
+    const dot = (x, y, col, label) => {
+      g.fillStyle = col; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill();
+      if (label) { g.strokeStyle = '#000'; g.strokeText(label, x + 6, y - 6); g.fillText(label, x + 6, y - 6); }
+    };
+    for (const [n, [u, w]] of Object.entries(model)) { dot(u * k, w * k, '#3f3', n); dot(2 * W + u * k, w * k, '#3f3', ''); }
+    for (const [n, [u, w]] of Object.entries(marked)) {
+      if (!KEYPOINTS[n]) continue;
+      dot(W + u * k, w * k, '#f33', n); dot(2 * W + u * k, w * k, '#f33', n);
+      if (model[n]) { g.strokeStyle = '#ff0'; g.lineWidth = 2; g.beginPath(); g.moveTo(2 * W + u * k, w * k); g.lineTo(2 * W + model[n][0] * k, model[n][1] * k); g.stroke(); g.lineWidth = 3; }
+    }
+  }
   g.font = 'bold 22px sans-serif'; g.fillStyle = '#fff'; g.strokeStyle = '#000'; g.lineWidth = 4;
   [['model', 0], [v.photo, W], ['overlay 50 %', 2 * W]].forEach(([t, x]) => { g.strokeText(t, x + 14, 34); g.fillText(t, x + 14, 34); });
   r.setPixelRatio(saved.ratio); r.setSize(saved.size.x, saved.size.y, false);
@@ -119,7 +149,7 @@ async function shoot(v, look) {
 let failed = 0;
 for (const v of views) {
   try {
-    const { url, info } = await evaluate(`(${shoot})(${JSON.stringify(v)}, ${JSON.stringify(look)})`);
+    const { url, info } = await evaluate(`(${shoot})(${JSON.stringify(v)}, ${JSON.stringify(look)}, ${keypoints}, ${height})`);
     const file = path.join(outDir, v.photo.replace(/\.(jpe?g|png)$/i, '.jpg'));
     fs.writeFileSync(file, Buffer.from(url.split(',')[1], 'base64'));
     console.log('saved', path.relative(process.cwd(), file), info ? JSON.stringify(info) : '');
